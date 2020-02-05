@@ -21,13 +21,18 @@ singleton logging class.
  * Signal handling was the last piece added into the system and must be enabled at runtime by
    provding a function pointer for a signal handler, e.g.:
 	- logtastic::registerSignalHandler( void (\*signal_handler)( int ) );
+	
+Had a lot of development when I wrote the FES simulations. Around 2015. Been a while since I've looked
+at it in details but it stills works perfectly!
+
 
 
 TODO:
- * Improve robustness for compilers that don't define \_\_COUNTER\_\_ - probably don't need this exact
-   interface can change it. I'd like to call a template function using the data objects adress as 
-   the template variable, but that functionality wasn't available when I wrote it. Maybe an
-   inherited "monitor" class could be used instead?
+ * Improve robustness for compilers that don't define \_\_COUNTER\_\_ - its not really used but it was
+   a feature thats available for variable tracking.
+   I'd like to call a template function using the data objects address as the template variable, but
+   that functionality wasn't available when I wrote it. Maybe an inherited "monitor" class could be
+   used instead?
  * Finer controls for the signal handling functionality. It was added quite quickly to meet a need
    but it could be generalised to a more flexible interface.
 
