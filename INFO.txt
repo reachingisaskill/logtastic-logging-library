@@ -1,0 +1,24 @@
+
+List of options for the logger:
+
+
+
+1. Flush on every call (Y/N)
+
+2. Destination (File/TTY)
+
+3. Format - Formatting : \t   Run time
+                         \T   Absolute time
+                         \d   Full start date
+                         \D   Current date
+                         \l   Line Number
+                         \L   Log level
+                         \f   Function Name
+                         \F   File Name
+                         alphanumerics and SOME symbols...
+          - Identicle for each log level?
+            or Different for each log level?
+
+4. Print to screen on High Log Level (Y/N -Which Level)
+
+5. 
