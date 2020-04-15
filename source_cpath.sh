@@ -14,5 +14,6 @@ LIBRARY_PATH=$LIBRARY_PATH:$DIR/lib
 
 export CPATH
 export LD_LIBRARY_PATH
+export LIBRARY_PATH
 #export PATH
 
