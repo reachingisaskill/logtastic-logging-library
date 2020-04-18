@@ -11,7 +11,17 @@ namespace logtastic
   messege::messege( log_depth depth, int identifier ) :
     _identifier( identifier ),
     _depth( depth ),
-    _messege( "" )
+    _messege( "" ),
+    _func_name( nullptr )
+  {
+    ++_instCount;
+  }
+  
+  messege::messege( log_depth depth, const char* func, int identifier ) :
+    _identifier( identifier ),
+    _depth( depth ),
+    _messege( "" ),
+    _func_name( func )
   {
     ++_instCount;
   }
@@ -19,7 +29,8 @@ namespace logtastic
   messege::messege( const messege& mess ) :
     _identifier( mess._identifier ),
     _depth( mess._depth ),
-    _messege( mess._messege.str() )
+    _messege( mess._messege.str() ),
+    _func_name( mess._func_name )
   {
     ++_instCount;
   }
@@ -34,16 +45,21 @@ namespace logtastic
       if ( _depth == logtastic::data )
         logtastic::logData( _identifier, result.c_str() );
       else
-        logtastic::log( _depth, result.c_str() );
+      {
+        if ( _func_name == nullptr )
+          logtastic::log( _depth, result.c_str() );
+        else
+          logtastic::log( _depth, _func_name, result.c_str() );
+      }
     }
   }
 
   template <>
-    messege& messege::operator<<( const log_depth& depth )
-    {
-      _depth = depth;
-      return *this;
-    }
+  messege& messege::operator<<( const log_depth& depth )
+  {
+    _depth = depth;
+    return *this;
+  }
 
 
 ///////////////////////////////////////////////////////////////
@@ -215,6 +231,14 @@ namespace logtastic
     if ( logger::_theInstance != 0 )
     {
       logger::_theInstance->Log_Statement( depth, string );
+    }
+  }
+
+  void log( log_depth depth, const char* func_name, const char* string )
+  {
+    if ( logger::_theInstance != 0 )
+    {
+      logger::_theInstance->Log_Statement( depth, func_name, string );
     }
   }
 
@@ -535,6 +559,22 @@ namespace logtastic
   {
     std::stringstream ss;
     ss << getPrefix( depth ) << string << "\n";
+
+    std::string result = ss.str();
+    outputAll( depth, result );
+
+    if ( _flushOnCall )
+    {
+      this->flush();
+    }
+
+    return *this;
+  }
+
+  logger& logger::Log_Statement( log_depth depth, const char* func_name, const char* string )
+  {
+    std::stringstream ss;
+    ss << getPrefix( depth ) << func_name << " : " << string << "\n";
 
     std::string result = ss.str();
     outputAll( depth, result );

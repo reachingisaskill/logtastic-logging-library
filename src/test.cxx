@@ -1,4 +1,4 @@
-#define __COUNTER__ 5
+//#define __COUNTER__ 5
 #include <iostream>
 
 #include "logtastic.h"

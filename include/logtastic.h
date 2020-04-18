@@ -54,15 +54,34 @@
 #ifndef __ALL_LOGGING_DISABLED__
 // MACRO DEFINITIONS
 
-#define INFO_LOG( log_messege )    logtastic::log( logtastic::info, log_messege )
-#define WARN_LOG( log_messege )    logtastic::log( logtastic::warn, log_messege )
-#define ERROR_LOG( log_messege )   logtastic::log( logtastic::error, log_messege )
-#define FAILURE_LOG( log_messege ) logtastic::log( logtastic::failure, log_messege )
+//#define INFO_LOG( log_messege )    logtastic::log( logtastic::info, log_messege )
+//#define WARN_LOG( log_messege )    logtastic::log( logtastic::warn, log_messege )
+//#define ERROR_LOG( log_messege )   logtastic::log( logtastic::error, log_messege )
+//#define FAILURE_LOG( log_messege ) logtastic::log( logtastic::failure, log_messege )
+//
+//#define INFO_STREAM logtastic::messege( logtastic::info )
+//#define WARN_STREAM logtastic::messege( logtastic::warn )
+//#define ERROR_STREAM logtastic::messege( logtastic::error )
+//#define FAILURE_STREAM logtastic::messege( logtastic::failure )
 
-#define INFO_STREAM logtastic::messege( logtastic::info )
-#define WARN_STREAM logtastic::messege( logtastic::warn )
-#define ERROR_STREAM logtastic::messege( logtastic::error )
-#define FAILURE_STREAM logtastic::messege( logtastic::failure )
+#ifndef LOGTASTIC_FUNCTION_NAME
+#ifdef WIN32 // Windows
+#define LOGTASTIC_FUNCTION_NAME __FUNCTION__
+#else // *nix
+#define LOGTASTIC_FUNCTION_NAME __func__
+//#define LOGTASTIC_FUNCTION_NAME __PRETTY_FUNCTION__
+#endif
+#endif
+
+#define INFO_LOG( log_messege )    logtastic::log( logtastic::info, LOGTASTIC_FUNCTION_NAME, log_messege )
+#define WARN_LOG( log_messege )    logtastic::log( logtastic::warn, LOGTASTIC_FUNCTION_NAME, log_messege )
+#define ERROR_LOG( log_messege )   logtastic::log( logtastic::error, LOGTASTIC_FUNCTION_NAME, log_messege )
+#define FAILURE_LOG( log_messege ) logtastic::log( logtastic::failure, LOGTASTIC_FUNCTION_NAME, log_messege )
+
+#define INFO_STREAM logtastic::messege( logtastic::info, LOGTASTIC_FUNCTION_NAME )
+#define WARN_STREAM logtastic::messege( logtastic::warn, LOGTASTIC_FUNCTION_NAME )
+#define ERROR_STREAM logtastic::messege( logtastic::error, LOGTASTIC_FUNCTION_NAME )
+#define FAILURE_STREAM logtastic::messege( logtastic::failure, LOGTASTIC_FUNCTION_NAME )
 
 // ONLY FOR USE WITH GCC - or others that define __COUNTER__!
 // #define VARIABLE_LOG( variable, count ) logtastic::recordVariable< __COUNTER__ >( #variable , variable, count )
@@ -111,10 +130,12 @@ namespace logtastic
       int _identifier;
       log_depth _depth;
       std::stringstream _messege;
+      const char* _func_name;
 
       static unsigned long int _instCount;
     public:
       messege( log_depth = logtastic::info, int = 0 );
+      messege( log_depth, const char*, int = 0 );
       messege( const messege& );
       ~messege();
 
@@ -179,6 +200,7 @@ namespace logtastic
      
       // friend logger const* log();
       friend void log( log_depth, const char* );
+      friend void log( log_depth, const char*, const char* );
       friend void logData( int, const char* );
 
       friend void init( const char*, const char*, std::ostream& );
@@ -212,6 +234,7 @@ namespace logtastic
       ////////////////////////////////////////////////////////////////
       
       logger& Log_Statement( log_depth, const char* );
+      logger& Log_Statement( log_depth, const char*, const char* );
       logger& Log_Data( int, const char* );
 
       template < typename T >
@@ -226,6 +249,7 @@ namespace logtastic
   ////////////////////////////////////////////////////////////////
 
   void log( log_depth, const char* );
+  void log( log_depth, const char*, const char* );
   void logData( int, const char* );
 
   void init( const char*, const char*, std::ostream& stream = std::cout );
