@@ -1,29 +1,31 @@
 
 #include "logtastic.h"
 
+#include <chrono>
 #include <iomanip>
 
 namespace logtastic
 {
 
-  unsigned long int messege::_instCount = 0;
-  
+  // Forward declarations
+  void logging_thread_function();
+
+///////////////////////////////////////////////////////////////
+
   messege::messege( log_depth depth, int identifier ) :
     _identifier( identifier ),
     _depth( depth ),
     _messege( "" ),
     _func_name( nullptr )
   {
-    ++_instCount;
   }
   
-  messege::messege( log_depth depth, const char* func, int identifier ) :
-    _identifier( identifier ),
+  messege::messege( log_depth depth, const char* func ) :
+    _identifier( 0 ),
     _depth( depth ),
     _messege( "" ),
     _func_name( func )
   {
-    ++_instCount;
   }
 
   messege::messege( const messege& mess ) :
@@ -32,26 +34,14 @@ namespace logtastic
     _messege( mess._messege.str() ),
     _func_name( mess._func_name )
   {
-    ++_instCount;
   }
 
   messege::~messege()
   {
-    --_instCount;
-    if ( _instCount == 0 )
-    {
-      std::string result = _messege.str();
+    std::string result = _messege.str();
 
-      if ( _depth == logtastic::data )
-        logtastic::logData( _identifier, result.c_str() );
-      else
-      {
-        if ( _func_name == nullptr )
-          logtastic::log( _depth, result.c_str() );
-        else
-          logtastic::log( _depth, _func_name, result.c_str() );
-      }
-    }
+//    logtastic::log( _depth, _func_name, result );
+    LOGGER_LOG_FUNCTION( _depth, _func_name, result );
   }
 
   template <>
@@ -63,45 +53,53 @@ namespace logtastic
 
 
 ///////////////////////////////////////////////////////////////
-
-
-  std::string logger::_dataDirectory( __LOGTASTIC_LOG_FILE_DIRECTORY__ );
-  std::string logger::_logDirectory( __LOGTASTIC_LOG_FILE_DIRECTORY__ );
-  logger* logger::_theInstance = 0;
-  std::list< std::string > logger::_filenames( 0, std::string("") );
-  std::map< int, std::ofstream* > logger::_dataFiles;
-  bool logger::_flushOnCall = true;
-  log_depth logger::_screenDepth = logtastic::warn;
-  log_depth logger::_variableLogDepth = logtastic::info;
-  bool logger::_handleSignals = true;
-  bool logger::_haltOnSignal = true;
-  int logger::_lastSignal( 0 );
-
-  void (*logger::_userHandler)(int) = 0;
-
-  //std::map< log_depth, instr_list > _formatting;
-
-
   //  Con/De-structors
 
-  logger::logger( const char* name, const char* version, std::ostream& stream ) :
-    _programName( name ),
-    _programVersion( version ),
+  logger* logger::_theInstance( nullptr );
+
+
+  logger::logger( std::ostream& stream ) :
+    _isRunning( false ),
+    _loggingThread(),
+    _statementQueue(),
+    _statementQueueMutex(),
+    _stopThread( false ),
+
+    _programName(),
+    _programVersion(),
     _output( stream ),
-    _startTime( time(0) )//,
-    //_startClock( gettimeofday() )
+    _startTime(),
+    _startClock(),
+    _logDirectory( __LOGTASTIC_LOG_FILE_DIRECTORY__ ),
+    _filenames( 0, std::string("") ),
+    _flushOnCall( true ),
+    _screenDepth( logtastic::warn ),
+    _variableLogDepth( logtastic::info ),
+    _handleSignals( true ),
+    _haltOnSignal( true ),
+    _lastSignal( 0 ),
+    _userHandler( 0 )
   {
+  }
+
+
+  void logger::initialise( const char* name, const char* version )
+  {
+    std::cout << "Initalising logger" << std::endl;
+    // Configure the details
+    _programName = name;
+    _programVersion = version;
+
+    _startTime = time(0);
     gettimeofday( &_startClock, 0 );
 
-
     // Register exiting functions
-
-    atexit( logtastic::stop );
+    atexit( stop );
     // at_quick_exit( logtastic::stop );
 
+    std::cout << "here 1 " << std::endl;
 
     // Register signal handlers
-
     if ( _handleSignals == true )
     {
       _sigAction.sa_handler = logtastic_signal_handler;
@@ -143,17 +141,18 @@ namespace logtastic
       // sigaction( SIGINFO, &_sigAction, 0 ); // Status request from lead process // NOT RECOGNISED
     }
 
+    std::cout << "here 2 " << std::endl;
 
-    // Make sure directories exist
-
+    // Make sure directories exist | TODO: #defines for windows machines!
     std::stringstream command;
-    command << "mkdir -p " << _logDirectory << " " << _dataDirectory;
+    command << "mkdir -p " << _logDirectory;
+    std::cout << command.str() << std::endl;
     system( command.str().c_str() );
 
 
+    std::cout << "here 3 " << std::endl;
  
     // Initialise output fstreams
-
     for ( std::list< std::string >::iterator it = _filenames.begin(); it != _filenames.end(); ++it )
     {
       std::ofstream* ofst = new std::ofstream( it->c_str() );
@@ -168,22 +167,27 @@ namespace logtastic
     }
 
 
+    std::cout << "here 4 " << std::endl;
 
     // Log initialisation statements
-    
     std::stringstream outputStr;
     outputStr << "\n\tLOGTASTIC LOGGING\n";
     outputStr << "Version - " << __LOGTASTIC_VERSION__ << "\n\n";
     outputStr << "Program Name         : " << _programName << "\n";
     outputStr << "Program Version      : " << _programVersion << "\n\n";
     outputStr << "Log File Directory   : " << _logDirectory << "\n";
-    outputStr << "Data File Directory  : " << _dataDirectory << "\n\n";
     outputStr << "Logging Initialised  : " << ctime(&_startTime) << "\n\n";
 
     std::string result = outputStr.str();
     this->outputAll( logtastic::info, result );
     this->flush();
+
+    // Start the logging thread
+    std::cout << "Starting Thread" << std::endl;
+    _loggingThread = std::thread( logging_thread_function );
+    _isRunning =true;
   }
+
 
   logger::logger( const logger& log ) :
     _programName( log._programName ),
@@ -195,12 +199,17 @@ namespace logtastic
     gettimeofday( &_startClock, 0 );
   }
 
+
   logger::~logger()
   {
-    // Close output fstreams
+    // Close the buffer thread
+    _stopThread = true;
+    _loggingThread.join();
 
+    // Reset the timer
     _startTime = time(0);
 
+    // Close all the streams
     std::stringstream outputStr;
     outputStr << "\nEND OF PROGRAM OPERATION\n";
     outputStr << "\nLogtastic Logging completed at : " << ctime( &_startTime ) << "\n";
@@ -215,26 +224,13 @@ namespace logtastic
       (*it)->close();
       delete (*it);
     }
-
-    for ( std::map< int, std::ofstream* >::iterator it = _dataFiles.begin(); it != _dataFiles.end(); ++it )
-    {
-      it->second->close();
-      delete it->second;
-    }
   }
 
 
-  //  Static Functions 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+  //  Friend Functions 
 
-  void log( log_depth depth, const char* string )
-  {
-    if ( logger::_theInstance != 0 )
-    {
-      logger::_theInstance->Log_Statement( depth, string );
-    }
-  }
-
-  void log( log_depth depth, const char* func_name, const char* string )
+  void log( log_depth depth, const char* func_name, std::string string )
   {
     if ( logger::_theInstance != 0 )
     {
@@ -242,23 +238,44 @@ namespace logtastic
     }
   }
 
-  void logData( int identifier, const char* string )
+
+  void push( log_depth depth, const char* function, std::string text )
   {
-    if ( logger::_theInstance != 0 )
+    static logger* theLogger = logger::get();
+    statement st;
+    st.depth = depth;
+    st.function = function;
+    st.text = text;
+
     {
-      logger::_theInstance->Log_Data( identifier, string );
+      std::lock_guard<std::mutex> lock( theLogger->_statementQueueMutex );
+      theLogger->_statementQueue.push( st );
     }
   }
 
-  void init( const char* name, const char* version, std::ostream& stream )
+
+  void init()
+  {
+    if ( logger::_theInstance == nullptr )
+    {
+      logger::_theInstance = new logger();
+    }
+  }
+
+  void start( const char* name, const char* version )
   {
     if ( logger::_theInstance == 0 )
     {
-      logger::_theInstance = new logger( name, version, stream );
+      logger::_theInstance = new logger();
+    }
+
+    if ( ! logger::_theInstance->_isRunning )
+    {
+      logger::_theInstance->initialise( name, version );
     }
     else
     {
-      ERROR_LOG( "Attempting to initialise when logger already initialised" );
+      ERROR_LOG( "Trying to start logging while it is already running." );
     }
   }
 
@@ -274,75 +291,30 @@ namespace logtastic
 
   void addLogFile( const char* fileName )
   {
-    std::string fileString = logger::_logDirectory + "/" + fileName;
-    if ( logger::_theInstance == 0 )
-      logger::_filenames.push_back( fileString );
+    std::string fileString = logger::_theInstance->_logDirectory + "/" + fileName;
+    if ( logger::_theInstance->_isRunning == false )
+      logger::_theInstance->_filenames.push_back( fileString );
     else
       ERROR_LOG( "Attempted to add another output file after logger initialisation" );
   }
 
   void setLogFileDirectory( const char* directoryName )
   {
-    if ( logger::_theInstance == 0 )
-      logger::_logDirectory = directoryName;
+    if ( logger::_theInstance->_isRunning == false )
+      logger::_theInstance->_logDirectory = directoryName;
     else
       ERROR_LOG( "Attempted to change the Log File Directory after initialisation" );
   }
 
-  void addDataFile( int identifier, const char* fileName )
-  {
-    std::string fileString = logger::_dataDirectory + "/" + fileName;
-    if ( logger::_dataFiles.find( identifier ) == logger::_dataFiles.end() )
-    {
-      std::ofstream* tmp = new std::ofstream( fileString.c_str() );
-      if ( tmp->fail() ) 
-      {
-        ERROR_STREAM << "Could Not Open Data File: " << fileName;
-        delete tmp;
-        return;
-      }
-      logger::_dataFiles.insert( std::make_pair( identifier, tmp ) );
-      INFO_STREAM << "Successfully Added Data File: " << identifier << " - " << fileName;
-    }
-    else
-    {
-      delete logger::_dataFiles[ identifier ];
-      logger::_dataFiles.erase( identifier );
-      logger::_dataFiles.insert( std::make_pair( identifier, new std::ofstream( fileString.c_str() ) ) );
-      INFO_STREAM << "Replaced Data File: " << identifier << " With: " << fileName;
-    }
-  }
-
-  void setDataFileDirectory( const char* directoryName )
-  {
-    if ( logger::_theInstance == 0 )
-      logger::_dataDirectory = directoryName;
-    else
-      ERROR_LOG( "Attempted to change the Data File Directory after initialisation" );
-  }
-
-  void closeDataFile( int n )
-  {
-    if ( logger::_dataFiles.find( n ) == logger::_dataFiles.end() )
-      ERROR_LOG( "Could not find file handle. No Data Files will be closed" );
-    else
-    {
-      logger::_dataFiles[ n ]->close();
-      delete logger::_dataFiles[ n ];
-      logger::_dataFiles.erase( n );
-      INFO_STREAM << "Data File Number: " << n << " successfully closed";
-    }
-  }
-
   void setFlushOnEveryCall( bool flush )
   {
-    logger::_flushOnCall = flush;
+    logger::_theInstance->_flushOnCall = flush;
   }
   
   void setPrintToScreenLimit( log_depth depth )
   {
-    if ( logger::_theInstance == 0 )
-      logger::_screenDepth = depth;
+    if ( logger::_theInstance->_isRunning == false )
+      logger::_theInstance->_screenDepth = depth;
     else
       ERROR_LOG( "Attempted to change logging setting (Print to terminal depth) after logger initialisation" );
   }
@@ -361,8 +333,8 @@ namespace logtastic
 
   void setVariableLogDepth( log_depth depth )
   {
-    if ( logger::_theInstance == 0 )
-      logger::_variableLogDepth = depth;
+    if ( logger::_theInstance->_isRunning == false )
+      logger::_theInstance->_variableLogDepth = depth;
     else
       ERROR_LOG( "Attempted to change logging setting (Variable log depth) after logger initialisation" );
   }
@@ -372,47 +344,48 @@ namespace logtastic
 
   void preventSignalHandling()
   {
-    if ( logger::_theInstance == 0 )
-      logger::_handleSignals = false;
+    if ( logger::_theInstance->_isRunning == false )
+      logger::_theInstance->_handleSignals = false;
     else
       ERROR_LOG( "Attempted to change signal handling behaviour after logger initialisation" );
   }
 
   void preventHaltOnSignal()
   {
-    if ( logger::_theInstance == 0 )
-      logger::_haltOnSignal = false;
+    if ( logger::_theInstance->_isRunning == false )
+      logger::_theInstance->_haltOnSignal = false;
     else
       ERROR_LOG( "Attempted to change signal handling behaviour after logger initialisation" );
   }
 
   int signalReceived()
   {
-    if ( logger::_theInstance == 0 )
+    if ( logger::_theInstance->_isRunning == false )
       return 0;
     else
-      return logger::_lastSignal;
+      return logger::_theInstance->_lastSignal;
   }
 
   void registerSignalHandler( void (*hndl)(int) )
   {
-    if ( logger::_theInstance == 0 )
-      logger::_userHandler = hndl;
+    if ( logger::_theInstance->_isRunning == false )
+      logger::_theInstance->_userHandler = hndl;
     else
       ERROR_LOG( "Attempted to set signal handler after logger initialisation" );
   }
 
   void logtastic_signal_handler( int sig )
   {
-    if ( logger::_theInstance == 0 ) return;
+    if ( ! logger::_theInstance->_isRunning ) return;
 
-    logger::_lastSignal = sig;
-    if ( logger::_userHandler != 0 ) logger::_userHandler( sig );
+    logger::_theInstance->_lastSignal = sig;
+    if ( logger::_theInstance->_userHandler != 0 ) logger::_theInstance->_userHandler( sig );
 
     switch( sig )
     {
       case SIGABRT :
         FAILURE_STREAM << "Program aborted internally.";
+        stop();
         exit( sig );
         break;
       case SIGHUP  :
@@ -420,6 +393,7 @@ namespace logtastic
       case SIGTERM :
       case SIGQUIT :
         FAILURE_STREAM << "Signal " << sig << " Received. Forcing Program Stop";
+        stop();
         exit( sig );
         break;
       case SIGFPE  :
@@ -430,6 +404,7 @@ namespace logtastic
       case SIGXFSZ :
         ERROR_STREAM << "A fatal error has occured in program operation.";
         FAILURE_STREAM << "Signal " << sig << " Recieved. Forcing Program Stop";
+        stop();
         exit( sig );
         break;
       case SIGUSR1 :
@@ -440,9 +415,10 @@ namespace logtastic
       case SIGTTIN :
       case SIGTTOU :
         ERROR_STREAM << "Signal " << sig << " Recieved.";
-        if ( logger::_haltOnSignal ) 
+        if ( logger::_theInstance->_haltOnSignal ) 
         {
           FAILURE_LOG( "Forcing Program Stop" );
+          stop();
           exit( sig );
         }
         break;
@@ -465,8 +441,9 @@ namespace logtastic
 
       case SIGTRAP :
         ERROR_LOG( "Breakpoint Signal Received" );
-        if ( logger::_haltOnSignal )
+        if ( logger::_theInstance->_haltOnSignal )
         {
+          stop();
           exit( sig );
         }
         break;
@@ -481,8 +458,9 @@ namespace logtastic
 
       default:
         FAILURE_STREAM << "Unexpected Signal " << sig << " Received";
-        if ( logger::_haltOnSignal )
+        if ( logger::_theInstance->_haltOnSignal )
         {
+          stop();
           exit( sig );
         }
         break;
@@ -545,6 +523,7 @@ namespace logtastic
     }
   }
   
+
   void logger::flush()
   {
     _output.flush();
@@ -555,23 +534,8 @@ namespace logtastic
     }
   }
 
-  logger& logger::Log_Statement( log_depth depth, const char* string )
-  {
-    std::stringstream ss;
-    ss << getPrefix( depth ) << string << "\n";
 
-    std::string result = ss.str();
-    outputAll( depth, result );
-
-    if ( _flushOnCall )
-    {
-      this->flush();
-    }
-
-    return *this;
-  }
-
-  logger& logger::Log_Statement( log_depth depth, const char* func_name, const char* string )
+  logger& logger::Log_Statement( log_depth depth, const char* func_name, std::string string )
   {
     std::stringstream ss;
     ss << getPrefix( depth ) << func_name << " : " << string << "\n";
@@ -587,14 +551,52 @@ namespace logtastic
     return *this;
   }
 
-  logger& logger::Log_Data( int identifier, const char* string )
-  {
-    std::map< int, std::ofstream* >::iterator it = _dataFiles.find( identifier );
-    
-    if ( it != _dataFiles.end() )
-      (*it->second) << string << "\n";
 
-    return *this;
+////////////////////////////////////////////////////////////////////////////////
+  // The logging thread.
+
+  bool notify_check()
+  {
+    static logger* theLogger = logger::get();
+    std::lock_guard< std::mutex > statementQueueLock( theLogger->_statementQueueMutex );
+    bool answer = theLogger->_statementQueue.size() > 0;
+    return answer;
+  }
+
+
+  void logging_thread_function()
+  {
+    static logger* theLogger = logger::get();
+    std::unique_lock< std::mutex > lock( theLogger->_statementQueueMutex, std::defer_lock );
+    statement current_statement;
+    size_t number = 0;
+
+    lock.lock();
+    number = theLogger->_statementQueue.size();
+    lock.unlock();
+
+//    while ( (! logger::_theInstance->_stopThread) ||  notify_check() )
+    do
+    {
+      if ( number > 0 )
+      {
+        lock.lock();
+        current_statement = theLogger->_statementQueue.front();
+        theLogger->_statementQueue.pop();
+        lock.unlock();
+
+        theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
+      }
+      else
+      {
+        std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
+      }
+
+      lock.lock();
+      number = theLogger->_statementQueue.size();
+      lock.unlock();
+    }
+    while ( (! logger::_theInstance->_stopThread) || ( number > 0 ) );
   }
 
 } // logtastic

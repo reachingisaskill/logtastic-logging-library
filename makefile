@@ -31,9 +31,6 @@
 #
 ############################################################################################
 
-# Top Level Directory
-HEAD = /home/chris/play/code
-
 # File Locations
 INC_DIR = include
 SRC_DIR = src
@@ -49,8 +46,8 @@ LIB_NAME = logtastic
 
 
 # Includes and Libraries
-INC_FLAGS += -I${INC_DIR} -I${HEAD}/include
-LIB_FLAGS += -L${HEAD}/lib
+INC_FLAGS += -I${INC_DIR}
+LIB_FLAGS += -lpthread
 
 
 # Compile-Time Definitions
