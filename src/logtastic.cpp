@@ -64,6 +64,7 @@ namespace logtastic
     _statementQueue(),
     _statementQueueMutex(),
     _stopThread( false ),
+    _queueSizeWarning( 10000 ),
 
     _programName(),
     _programVersion(),
@@ -85,7 +86,6 @@ namespace logtastic
 
   void logger::initialise( const char* name, const char* version )
   {
-    std::cout << "Initalising logger" << std::endl;
     // Configure the details
     _programName = name;
     _programVersion = version;
@@ -96,8 +96,6 @@ namespace logtastic
     // Register exiting functions
     atexit( stop );
     // at_quick_exit( logtastic::stop );
-
-    std::cout << "here 1 " << std::endl;
 
     // Register signal handlers
     if ( _handleSignals == true )
@@ -141,17 +139,12 @@ namespace logtastic
       // sigaction( SIGINFO, &_sigAction, 0 ); // Status request from lead process // NOT RECOGNISED
     }
 
-    std::cout << "here 2 " << std::endl;
-
     // Make sure directories exist | TODO: #defines for windows machines!
     std::stringstream command;
     command << "mkdir -p " << _logDirectory;
-    std::cout << command.str() << std::endl;
     system( command.str().c_str() );
 
 
-    std::cout << "here 3 " << std::endl;
- 
     // Initialise output fstreams
     for ( std::list< std::string >::iterator it = _filenames.begin(); it != _filenames.end(); ++it )
     {
@@ -167,8 +160,6 @@ namespace logtastic
     }
 
 
-    std::cout << "here 4 " << std::endl;
-
     // Log initialisation statements
     std::stringstream outputStr;
     outputStr << "\n\tLOGTASTIC LOGGING\n";
@@ -183,7 +174,6 @@ namespace logtastic
     this->flush();
 
     // Start the logging thread
-    std::cout << "Starting Thread" << std::endl;
     _loggingThread = std::thread( logging_thread_function );
     _isRunning =true;
   }
@@ -304,6 +294,14 @@ namespace logtastic
       logger::_theInstance->_logDirectory = directoryName;
     else
       ERROR_LOG( "Attempted to change the Log File Directory after initialisation" );
+  }
+
+  void setQueueSizeWarning( size_t limit )
+  {
+    if ( logger::_theInstance->_isRunning == false )
+      logger::_theInstance->_queueSizeWarning = limit;
+    else
+      ERROR_LOG( "Attempted to change the queue size limit after initialisation" );
   }
 
   void setFlushOnEveryCall( bool flush )
@@ -570,6 +568,8 @@ namespace logtastic
     std::unique_lock< std::mutex > lock( theLogger->_statementQueueMutex, std::defer_lock );
     statement current_statement;
     size_t number = 0;
+    size_t warning_limit = theLogger->_queueSizeWarning;
+    size_t throttling_limit = 0.8*theLogger->_queueSizeWarning;
 
     lock.lock();
     number = theLogger->_statementQueue.size();
@@ -578,7 +578,25 @@ namespace logtastic
 //    while ( (! logger::_theInstance->_stopThread) ||  notify_check() )
     do
     {
-      if ( number > 0 )
+      if ( number > warning_limit )
+      {
+        lock.lock(); // Block the submitting threads - reduce queue size to more sensible level
+
+        std::stringstream ss;
+        ss << "Logging buffer size: " << number << ", exceeding limits, throttling to 80%";
+        theLogger->Log_Statement( warn, "logging_thread_function", ss.str() );
+
+        while ( number > throttling_limit )
+        {
+          current_statement = theLogger->_statementQueue.front();
+          theLogger->_statementQueue.pop();
+
+          theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
+          --number;
+        }
+        lock.unlock();
+      }
+      else if ( number > 0 )
       {
         lock.lock();
         current_statement = theLogger->_statementQueue.front();

@@ -56,7 +56,6 @@
 
 ///////////////////////////////////////////////
 
-
 #if defined(__DEBUG_OFF__) || defined(__ALL_LOGGING_DISABLED__)
 
 #define DEBUG_LOG( log_messege ) do{}while(0)
@@ -177,6 +176,7 @@ namespace logtastic
       std::queue< statement > _statementQueue;
       std::mutex _statementQueueMutex;
       std::atomic_bool _stopThread;
+      size_t _queueSizeWarning;
 
       // Program data
       std::string _programName;
@@ -246,6 +246,8 @@ namespace logtastic
       friend void addLogFile( const char* );
       friend void setLogFileDirectory( const char* );
 
+      friend void setQueueSizeWarning( size_t );
+
       friend void setFlushOnEveryCall( bool );
       friend void setPrintToScreenLimit( log_depth );
       friend bool setFormat( log_depth, const char* );
@@ -282,6 +284,8 @@ namespace logtastic
 
   void addLogFile( const char* );
   void setLogFileDirectory( const char* );
+
+  void setQueueSizeWarning( size_t );
 
   void setFlushOnEveryCall( bool );
   void setPrintToScreenLimit( log_depth );
