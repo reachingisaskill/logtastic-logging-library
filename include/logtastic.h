@@ -333,8 +333,10 @@ namespace logtastic
   template < unsigned int N, typename T >
   void pushVariable( const char* name, const char* function, T& var, unsigned long int skipNum )
   {
+    logger* theLogger = logtastic::logger::get();
+    if ( theLogger == nullptr ) return;
+
     static unsigned long int count = 0;
-    static logger* theLogger = logtastic::logger::get();
     static statement st = { theLogger->_variableLogDepth, nullptr, 0, std::string() };
 
     if ( count == 0 )

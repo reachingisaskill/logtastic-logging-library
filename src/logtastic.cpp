@@ -235,7 +235,8 @@ namespace logtastic
 
   void push( log_depth depth, const char* function, std::string text )
   {
-    static logger* theLogger = logger::get();
+    logger* theLogger = logger::get();
+    if ( theLogger == nullptr ) return;
     statement st;
     st.depth = depth;
     st.function = function;
