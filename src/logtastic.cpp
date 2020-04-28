@@ -192,10 +192,6 @@ namespace logtastic
 
   logger::~logger()
   {
-    // Close the buffer thread
-    _stopThread = true;
-    _loggingThread.join();
-
     // Reset the timer
     _startTime = time(0);
 
@@ -214,6 +210,14 @@ namespace logtastic
       (*it)->close();
       delete (*it);
     }
+  }
+
+
+  void logger::stopThread()
+  {
+    // Close the buffer thread
+    _stopThread = true;
+    _loggingThread.join();
   }
 
 
@@ -273,6 +277,9 @@ namespace logtastic
   {
     if ( logger::_theInstance != 0 )
     {
+      // Stop the thread before we destory the object
+      logger::_theInstance->stopThread();
+
       delete logger::_theInstance;
       logger::_theInstance = 0;
     }
@@ -615,6 +622,17 @@ namespace logtastic
       lock.unlock();
     }
     while ( (! logger::_theInstance->_stopThread) || ( number > 0 ) );
+
+    // Empty what's left
+    lock.lock();
+    while ( ! theLogger->_statementQueue.empty() )
+    {
+      current_statement = theLogger->_statementQueue.front();
+      theLogger->_statementQueue.pop();
+
+      theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
+    }
+    lock.unlock();
   }
 
 } // logtastic

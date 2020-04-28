@@ -217,6 +217,8 @@ namespace logtastic
 
       void flush();
 
+      void stopThread();
+
     public:
 
       static logger* get() { return logger::_theInstance; }
