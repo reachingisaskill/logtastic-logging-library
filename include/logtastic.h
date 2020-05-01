@@ -1,6 +1,6 @@
 
-#ifndef __LOGTASTIC_H__
-#define __LOGTASTIC_H__
+#ifndef LOGTASTIC_H_
+#define LOGTASTIC_H_
 
 #include <iostream>
 #include <sstream>
@@ -22,17 +22,17 @@
 
 ///////////////////////////////////////////////
 
-#ifndef __LOGTASTIC_VERSION__
-#define __LOGTASTIC_VERSION__ "0.5"
+#ifndef LOGTASTIC_VERSION
+#define LOGTASTIC_VERSION "0.5"
 #endif
 
-#ifndef __LOGTASTIC_LOG_FILE_DIRECTORY__
-#define __LOGTASTIC_LOG_FILE_DIRECTORY__ "./"
+#ifndef LOGTASTIC_LOG_FILE_DIRECTORY
+#define LOGTASTIC_LOG_FILE_DIRECTORY "./"
 #endif
 
 ///////////////////////////////////////////////
 //
-// IF DEFINED __DEBUG_OFF__
+// IF DEFINED LOGTASTIC_DEBUG_OFF
 // THEN all debug log statements are disabled!
 // 
 ////////////////////////////////////////////////
@@ -49,41 +49,41 @@
 #endif
 
 ///////////////////////////////////////////////
-#define LOGGER_LOG_FUNCTION( d, f, t ) logtastic::push(d, f, t)
-#define LOGGER_VARIABLE_FUNCTION( i, n, f, v, c) logtastic::pushVariable< i >( n, f, v, c )
-//#define LOGGER_LOG_FUNCTION( d, f, t ) logtastic::log( d, f, t )
-//#define LOGGER_VARIABLE_FUNCTION( i, n, f, v, c) logtastic::recordVariable< i >( n, f, v, c )
+#define LOGTASTIC_LOG_FUNCTION( d, f, t ) logtastic::push(d, f, t)
+#define LOGTASTIC_VARIABLE_FUNCTION( i, n, f, v, c) logtastic::pushVariable< i >( n, f, v, c )
+//#define LOGTASTIC_LOG_FUNCTION( d, f, t ) logtastic::log( d, f, t )
+//#define LOGTASTIC_VARIABLE_FUNCTION( i, n, f, v, c) logtastic::recordVariable< i >( n, f, v, c )
 
 ///////////////////////////////////////////////
 
-#if defined(__DEBUG_OFF__) || defined(__ALL_LOGGING_DISABLED__)
+#if defined(LOGTASTIC_DEBUG_OFF) || defined(LOGTASTIC_ALL_LOGGING_DISABLED)
 
 #define DEBUG_LOG( log_messege ) do{}while(0)
 #define DEBUG_STREAM             if(0) logtastic::messege( logtastic::debug, LOGTASTIC_FUNCTION_NAME )
 
 #else
 
-#define DEBUG_LOG( log_messege ) LOGGER_LOG_FUNCTION( logtastic::debug, LOGTASTIC_FUNCTION_NAME, log_messege )
+#define DEBUG_LOG( log_messege ) LOGTASTIC_LOG_FUNCTION( logtastic::debug, LOGTASTIC_FUNCTION_NAME, log_messege )
 #define DEBUG_STREAM             logtastic::messege( logtastic::debug, LOGTASTIC_FUNCTION_NAME )
 
 #endif
 
 ////////////////////////////////////////////////
 
-#ifndef __ALL_LOGGING_DISABLED__
+#ifndef LOGTASTIC_ALL_LOGGING_DISABLED
 // MACROS ENABLED
 
-#define INFO_LOG( log_messege )    LOGGER_LOG_FUNCTION( logtastic::info, LOGTASTIC_FUNCTION_NAME, log_messege )
-#define WARN_LOG( log_messege )    LOGGER_LOG_FUNCTION( logtastic::warn, LOGTASTIC_FUNCTION_NAME, log_messege )
-#define ERROR_LOG( log_messege )   LOGGER_LOG_FUNCTION( logtastic::error, LOGTASTIC_FUNCTION_NAME, log_messege )
-#define FAILURE_LOG( log_messege ) LOGGER_LOG_FUNCTION( logtastic::failure, LOGTASTIC_FUNCTION_NAME, log_messege )
+#define INFO_LOG( log_messege )    LOGTASTIC_LOG_FUNCTION( logtastic::info, LOGTASTIC_FUNCTION_NAME, log_messege )
+#define WARN_LOG( log_messege )    LOGTASTIC_LOG_FUNCTION( logtastic::warn, LOGTASTIC_FUNCTION_NAME, log_messege )
+#define ERROR_LOG( log_messege )   LOGTASTIC_LOG_FUNCTION( logtastic::error, LOGTASTIC_FUNCTION_NAME, log_messege )
+#define FAILURE_LOG( log_messege ) LOGTASTIC_LOG_FUNCTION( logtastic::failure, LOGTASTIC_FUNCTION_NAME, log_messege )
 
 #define INFO_STREAM logtastic::messege( logtastic::info, LOGTASTIC_FUNCTION_NAME )
 #define WARN_STREAM logtastic::messege( logtastic::warn, LOGTASTIC_FUNCTION_NAME )
 #define ERROR_STREAM logtastic::messege( logtastic::error, LOGTASTIC_FUNCTION_NAME )
 #define FAILURE_STREAM logtastic::messege( logtastic::failure, LOGTASTIC_FUNCTION_NAME )
 
-#define VARIABLE_LOG( id, variable, count ) LOGGER_VARIABLE_FUNCTION( id, #variable, LOGTASTIC_FUNCTION_NAME, variable, count )
+#define VARIABLE_LOG( id, variable, count ) LOGTASTIC_VARIABLE_FUNCTION( id, #variable, LOGTASTIC_FUNCTION_NAME, variable, count )
 
 #else
 // MACROS DISABLED
@@ -165,7 +165,7 @@ namespace logtastic
 
       ////////////////////////////////////////////////////////////////
 
-#ifdef __DEBUG_OFF__
+#ifdef LOGTASTIC_DEBUG_OFF
       static const bool _outputDebug = false;
 #else
       static const bool _outputDebug = true;
@@ -317,7 +317,7 @@ namespace logtastic
       std::stringstream ss;
       ss << "Monitoring variable id number : " << N << " (" << name << ") - Every " << skipNum << " steps with initial value = " << var;
 //        logtastic::log( logger::_variableLogDepth, ss.str().c_str() );
-      LOGGER_LOG_FUNCTION( theLogger->_variableLogDepth, function, ss.str() );
+      LOGTASTIC_LOG_FUNCTION( theLogger->_variableLogDepth, function, ss.str() );
     }
 
     if ( count >= skipNum )
@@ -344,7 +344,7 @@ namespace logtastic
       std::stringstream ss;
       ss << "Monitoring variable id number : " << N << " (" << name << ") - Every " << skipNum << " steps with initial value = " << var;
 //        logtastic::log( logger::_variableLogDepth, ss.str().c_str() );
-      LOGGER_LOG_FUNCTION( theLogger->_variableLogDepth, function, ss.str() );
+      LOGTASTIC_LOG_FUNCTION( theLogger->_variableLogDepth, function, ss.str() );
     }
 
     if ( count >= skipNum )
@@ -393,4 +393,4 @@ namespace logtastic
 
 }
 
-#endif // __LOGTASTIC_H__
+#endif // LOGTASTIC_H_

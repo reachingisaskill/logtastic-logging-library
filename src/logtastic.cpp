@@ -41,7 +41,7 @@ namespace logtastic
     std::string result = _messege.str();
 
 //    logtastic::log( _depth, _func_name, result );
-    LOGGER_LOG_FUNCTION( _depth, _func_name, result );
+    LOGTASTIC_LOG_FUNCTION( _depth, _func_name, result );
   }
 
   template <>
@@ -71,7 +71,7 @@ namespace logtastic
     _output( stream ),
     _startTime(),
     _startClock(),
-    _logDirectory( __LOGTASTIC_LOG_FILE_DIRECTORY__ ),
+    _logDirectory( LOGTASTIC_LOG_FILE_DIRECTORY ),
     _filenames( 0, std::string("") ),
     _flushOnCall( true ),
     _screenDepth( logtastic::warn ),
@@ -163,7 +163,7 @@ namespace logtastic
     // Log initialisation statements
     std::stringstream outputStr;
     outputStr << "\n\tLOGTASTIC LOGGING\n";
-    outputStr << "Version - " << __LOGTASTIC_VERSION__ << "\n\n";
+    outputStr << "Version - " << LOGTASTIC_VERSION << "\n\n";
     outputStr << "Program Name         : " << _programName << "\n";
     outputStr << "Program Version      : " << _programVersion << "\n\n";
     outputStr << "Log File Directory   : " << _logDirectory << "\n";
