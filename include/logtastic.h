@@ -109,7 +109,7 @@
 namespace logtastic
 {
 
-  enum log_depth { debug, info, warn, error, failure };
+  enum log_depth { debug, info, warn, error, failure, off };
 
   class messege;
   class logger;
