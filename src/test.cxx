@@ -14,10 +14,9 @@ int main ( int, char** )
 {
   logtastic::init();
   logtastic::setLogFileDirectory( "./dat" );
-//  logtastic::preventSignalHandling();
-  logtastic::preventHaltOnSignal();
 
-  logtastic::registerSignalHandler( test );
+  logtastic::registerSignalHandler( SIGINT, test );
+  logtastic::setHaltOnSignal( SIGINT, true );
 
   logtastic::addLogFile("test.log");
 

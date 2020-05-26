@@ -6,7 +6,6 @@ int main ( int, char** )
 {
   logtastic::init();
   logtastic::setLogFileDirectory( "./dat" );
-  logtastic::preventHaltOnSignal();
   logtastic::setPrintToScreenLimit( logtastic::failure );
   logtastic::addLogFile("integration.log");
 

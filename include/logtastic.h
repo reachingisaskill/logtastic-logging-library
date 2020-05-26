@@ -37,11 +37,28 @@
 ////////////////////////////////////////////////
 
 // Define the function name string
-#ifndef LOGTASTIC_FUNCTION_NAME
 
-#ifdef WIN32 // Windows
+#if defined _WIN32 // Windows
+
+#define LOGTASTIC_NUMBER_SIGNALS 6
+
+#ifndef LOGTASTIC_FUNCTION_NAME
 #define LOGTASTIC_FUNCTION_NAME __FUNCTION__
-#else // *nix
+#endif
+
+#elif defined __linux__ // linux
+
+#define LOGTASTIC_NUMBER_SIGNALS 25
+
+#ifndef LOGTASTIC_FUNCTION_NAME
+#define LOGTASTIC_FUNCTION_NAME __func__
+#endif
+
+#else // Just use the default
+
+#define LOGTASTIC_NUMBER_SIGNALS 6
+
+#ifndef LOGTASTIC_FUNCTION_NAME
 #define LOGTASTIC_FUNCTION_NAME __func__
 #endif
 
@@ -151,6 +168,8 @@ namespace logtastic
 
   class logger
   {
+    typedef void (*SignalHandler)(int);
+
     private:
       logger( std::ostream& st = std::cout );// Constructor
       logger( const logger& ); // Copy Constructor
@@ -163,12 +182,6 @@ namespace logtastic
       static logger* _theInstance; // THE INSTANCE!
 
       ////////////////////////////////////////////////////////////////
-
-#ifdef LOGTASTIC_DEBUG_OFF
-      static const bool _outputDebug = false;
-#else
-      static const bool _outputDebug = true;
-#endif
 
       // Thread specific data
       std::thread _loggingThread;
@@ -192,7 +205,7 @@ namespace logtastic
       void outputAll( log_depth, std::string& );
 
       // Signal action object
-      struct sigaction _sigAction;
+      SignalHandler _userSignalHandlers[LOGTASTIC_NUMBER_SIGNALS];
 
       // Options configuration
       std::string _logDirectory;
@@ -200,11 +213,7 @@ namespace logtastic
       bool _flushOnCall;
       log_depth _screenDepth;
       log_depth _variableLogDepth;
-      bool _handleSignals;
-      bool _haltOnSignal;
-      int _lastSignal;
-
-      void (*_userHandler)(int);
+      bool _haltOnSignal[LOGTASTIC_NUMBER_SIGNALS];
 
 
       ////////////////////////////////////////////////////////////////
@@ -255,10 +264,8 @@ namespace logtastic
       friend bool setFormatAll( const char * );
       friend void setVariableLogDepth( log_depth );
 
-      friend void preventSignalHandling();
-      friend void preventHaltOnSignal();
-      friend int signalReceived();
-      friend void registerSignalHandler( void (*)(int) );
+      friend void setHaltOnSignal( int, bool );
+      friend void registerSignalHandler( int, void (*)(int) );
 
       // Can't be a member function
       friend void logtastic_signal_handler( int );
@@ -294,10 +301,8 @@ namespace logtastic
   bool setFormatAll( const char * );
   void setVariableLogDepth( log_depth );
 
-  void preventSignalHandling();
-  void preventHaltOnSignal();
-  int signalReceived();
-  void registerSignalHandler( void (*)(int) );
+  void setHaltOnSignal( int, bool );
+  void registerSignalHandler( int, void (*)(int) );
 
   void logtastic_signal_handler( int );
 

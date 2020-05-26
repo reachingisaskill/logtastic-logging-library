@@ -5,6 +5,47 @@
 #include <ctime>
 
 
+// Local definitions
+#if defined __linux__
+
+#define LOGTASTIC_SIGNAL_ID( signal ) ( signal == SIGABRT   ? 0 : \
+                                        signal == SIGFPE    ? 1 : \
+                                        signal == SIGILL    ? 2 : \
+                                        signal == SIGINT    ? 3 : \
+                                        signal == SIGSEGV   ? 4 : \
+                                        signal == SIGTERM   ? 5 : \
+                                        signal == SIGHUP    ? 6 : \
+                                        signal == SIGQUIT   ? 7 : \
+                                        signal == SIGBUS    ? 8 : \
+                                        signal == SIGXCPU   ? 9 : \
+                                        signal == SIGXFSZ   ? 10 : \
+                                        signal == SIGUSR1   ? 11 : \
+                                        signal == SIGUSR2   ? 12 : \
+                                        signal == SIGPIPE   ? 13 : \
+                                        signal == SIGCHLD   ? 14 : \
+                                        signal == SIGTTIN   ? 15 : \
+                                        signal == SIGTTOU   ? 16 : \
+                                        signal == SIGALRM   ? 17 : \
+                                        signal == SIGVTALRM ? 18 : \
+                                        signal == SIGPROF   ? 19 : \
+                                        signal == SIGSTOP   ? 20 : \
+                                        signal == SIGTSTP   ? 21 : \
+                                        signal == SIGCONT   ? 22 : \
+                                        signal == SIGTRAP   ? 23 : \
+                                        signal == SIGWINCH  ? 24 : 25 )
+
+#else
+
+#define LOGTASTIC_SIGNAL_ID( signal ) ( signal == SIGABRT   ? 0 : \
+                                        signal == SIGFPE    ? 1 : \
+                                        signal == SIGILL    ? 2 : \
+                                        signal == SIGINT    ? 3 : \
+                                        signal == SIGSEGV   ? 4 : \
+                                        signal == SIGTERM   ? 5 : 6 )
+
+#endif
+
+
 namespace logtastic
 {
 
@@ -72,16 +113,19 @@ namespace logtastic
     _output( stream ),
     _startTime(),
     _startClock(),
+    _userSignalHandlers(),
     _logDirectory( LOGTASTIC_LOG_FILE_DIRECTORY ),
     _filenames( 0, std::string("") ),
     _flushOnCall( true ),
     _screenDepth( logtastic::warn ),
     _variableLogDepth( logtastic::info ),
-    _handleSignals( true ),
-    _haltOnSignal( true ),
-    _lastSignal( 0 ),
-    _userHandler( 0 )
+    _haltOnSignal()
   {
+    for ( unsigned int i = 0; i < LOGTASTIC_NUMBER_SIGNALS; ++i )
+    {
+      _userSignalHandlers[i] = nullptr;
+      _haltOnSignal[i] = false;
+    }
   }
 
 
@@ -95,55 +139,59 @@ namespace logtastic
     _startClock = std::chrono::steady_clock::now();
 
     // Register exiting functions
-    atexit( stop );
-    // at_quick_exit( logtastic::stop );
+    std::atexit( stop );
+    std::at_quick_exit( stop );
 
     // Register signal handlers
-    if ( _handleSignals == true )
-    {
-      _sigAction.sa_handler = logtastic_signal_handler;
-      sigemptyset( &_sigAction.sa_mask );
-      _sigAction.sa_flags = SA_RESTART;
+    std::signal( SIGABRT, logtastic_signal_handler ); // Abort
+    std::signal( SIGFPE , logtastic_signal_handler ); // Floating Point Exception
+    std::signal( SIGILL , logtastic_signal_handler ); // Illegal Instruction
+    std::signal( SIGINT , logtastic_signal_handler ); // Interrupt
+    std::signal( SIGSEGV, logtastic_signal_handler ); // Segmentation Violation
+    std::signal( SIGTERM, logtastic_signal_handler ); // Termination
 
-      sigaction( SIGHUP , &_sigAction, 0 ); // Terminal Hangup
-      sigaction( SIGABRT, &_sigAction, 0 ); // Abort
-      sigaction( SIGINT , &_sigAction, 0 ); // Interrupt
-      sigaction( SIGTERM, &_sigAction, 0 ); // Termination
-      sigaction( SIGQUIT, &_sigAction, 0 ); // Quit & Core dump (user error detection)
+    // POSIX Signals
+#ifdef __linux__
+    std::signal( SIGHUP ,   logtastic_signal_handler ); // Terminal Hangup
+    std::signal( SIGQUIT,   logtastic_signal_handler ); // Quit & Core dump (user error detection)
+    std::signal( SIGBUS ,   logtastic_signal_handler ); // Bus Error ( Illegal Address )
+    std::signal( SIGXCPU,   logtastic_signal_handler ); // CPU time exceeded
+    std::signal( SIGXFSZ,   logtastic_signal_handler ); // File Size Exceeded
+    std::signal( SIGUSR1,   logtastic_signal_handler ); // USER 1
+    std::signal( SIGUSR2,   logtastic_signal_handler ); // USER 2
+    std::signal( SIGPIPE,   logtastic_signal_handler ); // Broken Pipe
+    std::signal( SIGCHLD,   logtastic_signal_handler ); // Child Process Termination/Stop
+    std::signal( SIGTTIN,   logtastic_signal_handler ); // Access STDIN while in background
+    std::signal( SIGTTOU,   logtastic_signal_handler ); // Using STDOUT while in background (if TOSTOP mode is set)
+    std::signal( SIGALRM,   logtastic_signal_handler ); // Alarm using real or clock time
+    std::signal( SIGVTALRM, logtastic_signal_handler ); // Current process Virtual Time Alarm
+    std::signal( SIGPROF,   logtastic_signal_handler ); // Profiling Alarm
+    std::signal( SIGSTOP,   logtastic_signal_handler ); // Stop
+    std::signal( SIGTSTP,   logtastic_signal_handler ); // Polite Stop ( C-z )
+    std::signal( SIGCONT,   logtastic_signal_handler ); // Program Continue
+    std::signal( SIGTRAP,   logtastic_signal_handler ); // Breakpoint trapping
+    std::signal( SIGWINCH,  logtastic_signal_handler ); // Window size change
+    // std::signal( SIGLOST,   logtastic_signal_handler ); // Lost remote resource // NOT RECOGNISED
+    // sigaction( SIGINFO, logtastic_signal_handler ); // Status request from lead process // NOT RECOGNISED
+#endif
 
-      sigaction( SIGFPE , &_sigAction, 0 ); // Floating Point Exception
-      sigaction( SIGILL , &_sigAction, 0 ); // Illegal Instruction
-      sigaction( SIGSEGV, &_sigAction, 0 ); // Segmentation Violation
-      sigaction( SIGBUS , &_sigAction, 0 ); // Bus Error ( Illegal Address )
-      sigaction( SIGXCPU, &_sigAction, 0 ); // CPU time exceeded
-      sigaction( SIGXFSZ, &_sigAction, 0 ); // File Size Exceeded
 
-      sigaction( SIGUSR1, &_sigAction, 0 ); // USER 1
-      sigaction( SIGUSR2, &_sigAction, 0 ); // USER 2
-      sigaction( SIGPIPE, &_sigAction, 0 ); // Broken Pipe
-      // sigaction( SIGLOST, &_sigAction, 0 ); // Lost remote resource // NOT RECOGNISED
-
-      sigaction( SIGCHLD, &_sigAction, 0 ); // Child Process Termination/Stop
-      sigaction( SIGTTIN, &_sigAction, 0 ); // Access STDIN while in background
-      sigaction( SIGTTOU, &_sigAction, 0 ); // Using STDOUT while in background (if TOSTOP mode is set)
-
-      sigaction( SIGALRM, &_sigAction, 0 ); // Alarm using real or clock time
-      sigaction( SIGVTALRM, &_sigAction, 0 ); // Current process Virtual Time Alarm
-      sigaction( SIGPROF, &_sigAction, 0 ); // Profiling Alarm
-
-      sigaction( SIGSTOP, &_sigAction, 0 ); // Stop
-      sigaction( SIGTSTP, &_sigAction, 0 ); // Polite Stop ( C-z )
-      sigaction( SIGCONT, &_sigAction, 0 ); // Program Continue
-      sigaction( SIGTRAP, &_sigAction, 0 ); // Breakpoint trapping
-
-      sigaction( SIGWINCH, &_sigAction, 0 ); // Window size change
-      // sigaction( SIGINFO, &_sigAction, 0 ); // Status request from lead process // NOT RECOGNISED
-    }
-
-    // Make sure directories exist | TODO: #defines for windows machines!
+    // Make sure directories exist
     std::stringstream command;
+#if defined _WIN32
+    command << "md " << _logDirectory;
+#elif defined __linux__
     command << "mkdir -p " << _logDirectory;
-    system( command.str().c_str() );
+#else // Might as well try this one
+    command << "mkdir " << _logDirectory;
+#endif
+    int mkdir_result = std::system( command.str().c_str() );
+
+    if ( mkdir_result )
+    {
+      std::cerr << "Could not create and verify logfile directory.\nIs your operating system supported?" << std::endl;
+      std::abort();
+    }
 
 
     // Initialise output fstreams
@@ -351,34 +399,18 @@ namespace logtastic
 
   // Signal Handling
 
-  void preventSignalHandling()
+  void setHaltOnSignal( int signal, bool value )
   {
     if ( logger::_theInstance->_isRunning == false )
-      logger::_theInstance->_handleSignals = false;
+      logger::_theInstance->_haltOnSignal[LOGTASTIC_SIGNAL_ID( signal )] = value;
     else
       ERROR_LOG( "Attempted to change signal handling behaviour after logger initialisation" );
   }
 
-  void preventHaltOnSignal()
+  void registerSignalHandler( int signal, void (*hndl)(int) )
   {
     if ( logger::_theInstance->_isRunning == false )
-      logger::_theInstance->_haltOnSignal = false;
-    else
-      ERROR_LOG( "Attempted to change signal handling behaviour after logger initialisation" );
-  }
-
-  int signalReceived()
-  {
-    if ( logger::_theInstance->_isRunning == false )
-      return 0;
-    else
-      return logger::_theInstance->_lastSignal;
-  }
-
-  void registerSignalHandler( void (*hndl)(int) )
-  {
-    if ( logger::_theInstance->_isRunning == false )
-      logger::_theInstance->_userHandler = hndl;
+      logger::_theInstance->_userSignalHandlers[LOGTASTIC_SIGNAL_ID( signal)] = hndl;
     else
       ERROR_LOG( "Attempted to set signal handler after logger initialisation" );
   }
@@ -386,92 +418,253 @@ namespace logtastic
   void logtastic_signal_handler( int sig )
   {
     if ( ! logger::_theInstance->_isRunning ) return;
+    logger::SignalHandler handler = logger::_theInstance->_userSignalHandlers[ LOGTASTIC_SIGNAL_ID( sig ) ];
+    bool kill = logger::_theInstance->_haltOnSignal[ LOGTASTIC_SIGNAL_ID( sig ) ];
 
-    logger::_theInstance->_lastSignal = sig;
-    if ( logger::_theInstance->_userHandler != 0 ) logger::_theInstance->_userHandler( sig );
 
     switch( sig )
     {
       case SIGABRT :
-        FAILURE_STREAM << "Program aborted internally.";
+        FAILURE_LOG( "Abort Signal Received." );
+        if ( handler != nullptr ) handler( sig );
         stop();
-        exit( sig );
+        std::exit( sig );
         break;
-      case SIGHUP  :
-      case SIGINT  :
-      case SIGTERM :
-      case SIGQUIT :
-        FAILURE_STREAM << "Signal " << sig << " Received. Forcing Program Stop";
-        stop();
-        exit( sig );
-        break;
+
       case SIGFPE  :
-      case SIGILL  :
-      case SIGSEGV :
-      case SIGBUS  :
-      case SIGXCPU :
-      case SIGXFSZ :
-        ERROR_STREAM << "A fatal error has occured in program operation.";
-        FAILURE_STREAM << "Signal " << sig << " Recieved. Forcing Program Stop";
+        FAILURE_LOG( "Floating Point Exception Received." );
+        if ( handler != nullptr ) handler( sig );
         stop();
-        exit( sig );
+        std::exit( sig );
         break;
-      case SIGUSR1 :
-      case SIGUSR2 :
-      case SIGPIPE :
-      // case SIGLOST :
-      case SIGCHLD :
-      case SIGTTIN :
-      case SIGTTOU :
-        ERROR_STREAM << "Signal " << sig << " Recieved.";
-        if ( logger::_theInstance->_haltOnSignal ) 
+
+      case SIGILL  :
+        FAILURE_LOG( "Illegal Instruction Signal Received." );
+        if ( handler != nullptr ) handler( sig );
+        stop();
+        std::exit( sig );
+        break;
+
+      case SIGSEGV :
+        FAILURE_LOG( "Segmentation Violoation Signal Received." );
+        if ( handler != nullptr ) handler( sig );
+        stop();
+        std::exit( sig );
+        break;
+
+      case SIGINT  :
+        if ( kill ) 
         {
-          FAILURE_LOG( "Forcing Program Stop" );
+          FAILURE_LOG( "Interrupt Signal Received. Halting." );
+          if ( handler != nullptr ) handler( sig );
           stop();
-          exit( sig );
+          std::exit( sig );
+        }
+        else
+        {
+          ERROR_LOG( "Interrupt Signal Received." );
+          if ( handler != nullptr ) handler( sig );
         }
         break;
 
-      case SIGALRM :
-      case SIGVTALRM :
-      case SIGPROF :
-        WARN_STREAM << "Alarm Signal Recieved, signal " << sig;
+      case SIGTERM :
+        if ( kill ) 
+        {
+          FAILURE_LOG( "Termination Signal Received. Halting." );
+          if ( handler != nullptr ) handler( sig );
+          stop();
+          std::exit( sig );
+        }
+        else
+        {
+          ERROR_LOG( "Termination Signal Received." );
+          if ( handler != nullptr ) handler( sig );
+        }
         break;
 
-      case SIGSTOP :
+#ifdef __linux__
       case SIGTSTP :
-        WARN_LOG( "Program Operation Stopped" );
-        raise( SIGSTOP );
+        INFO_LOG( "Stopping program execution." );
+        if ( handler != nullptr ) handler( sig );
+        if ( kill ) std::raise( SIGSTOP );
         break;
 
       case SIGCONT :
-        WARN_LOG( "Program Operation Resumed" );
+        INFO_LOG( "Resuming program execution." );
+        if ( handler != nullptr ) handler( sig );
+        break;
+
+      case SIGALRM :
+        WARN_STREAM << "Alarm Signal Received: " << sig;
+        if ( handler != nullptr ) handler( sig );
+        if ( kill )
+        {
+          FAILURE_LOG( "Forcing program exit on signal." );
+          stop();
+          std::exit( sig );
+        }
+        break;
+
+      case SIGVTALRM :
+        WARN_STREAM << "Virtual Alarm Signal Received: " << sig;
+        if ( handler != nullptr ) handler( sig );
+        if ( kill )
+        {
+          FAILURE_LOG( "Forcing program exit on signal." );
+          stop();
+          std::exit( sig );
+        }
+        break;
+
+      case SIGPROF :
+        WARN_STREAM << "Profiling Timer Expiration Signal Received: " << sig;
+        if ( handler != nullptr ) handler( sig );
+        if ( kill )
+        {
+          FAILURE_LOG( "Forcing program exit on signal." );
+          stop();
+          std::exit( sig );
+        }
+        break;
+
+      case SIGHUP :
+        if ( kill ) 
+        {
+          FAILURE_LOG( "Hang Up Signal Received. Halting." );
+          if ( handler != nullptr ) handler( sig );
+          stop();
+          std::exit( sig );
+        }
+        else
+        {
+          ERROR_LOG( "Hang Up Signal Received." );
+          if ( handler != nullptr ) handler( sig );
+        }
+        break;
+
+      case SIGQUIT :
+        FAILURE_LOG( "Quit Signal Received." );
+        if ( handler != nullptr ) handler( sig );
+        stop();
+        std::exit( sig );
+        break;
+
+      case SIGBUS :
+        FAILURE_LOG( "Bus Error Signal Received." );
+        if ( handler != nullptr ) handler( sig );
+        stop();
+        std::exit( sig );
+        break;
+
+      case SIGXCPU :
+        FAILURE_LOG( "CPU Time Exceeded Signal Received." );
+        if ( handler != nullptr ) handler( sig );
+        stop();
+        std::exit( sig );
+        break;
+
+      case SIGXFSZ :
+        FAILURE_LOG( "File Size Exceeded Signal Received." );
+        if ( handler != nullptr ) handler( sig );
+        stop();
+        std::exit( sig );
+        break;
+
+      case SIGUSR1 :
+        INFO_LOG( "User Signal 1 Received." );
+        if ( handler != nullptr ) handler( sig );
+        if ( kill )
+        {
+          FAILURE_LOG( "Forcing program exit on signal." );
+          stop();
+          std::exit( sig );
+        }
+        break;
+
+      case SIGUSR2 :
+        INFO_LOG( "User Signal 2 Received." );
+        if ( handler != nullptr ) handler( sig );
+        if ( kill )
+        {
+          FAILURE_LOG( "Forcing program exit on signal." );
+          stop();
+          std::exit( sig );
+        }
+        break;
+
+      case SIGPIPE :
+        INFO_LOG( "Broken Pipe Signal Received." );
+        if ( handler != nullptr ) handler( sig );
+        if ( kill )
+        {
+          FAILURE_LOG( "Forcing program exit on signal." );
+          stop();
+          std::exit( sig );
+        }
+        break;
+
+      case SIGCHLD :
+        INFO_LOG( "Child Process Termination Signal Received." );
+        if ( handler != nullptr ) handler( sig );
+        if ( kill )
+        {
+          FAILURE_LOG( "Forcing program exit on signal." );
+          stop();
+          std::exit( sig );
+        }
+        break;
+
+      case SIGTTIN :
+        INFO_LOG( "Terminal Input For Background Process Signal Received." );
+        if ( handler != nullptr ) handler( sig );
+        if ( kill )
+        {
+          WARN_LOG( "Stopping program." );
+          std::raise( SIGSTOP );
+        }
+        break;
+
+      case SIGTTOU :
+        INFO_LOG( "Terminal Output For Background Process Signal Received." );
+        if ( handler != nullptr ) handler( sig );
+        if ( kill )
+        {
+          FAILURE_LOG( "Forcing program exit on signal." );
+          std::raise( SIGSTOP );
+        }
         break;
 
       case SIGTRAP :
-        ERROR_LOG( "Breakpoint Signal Received" );
-        if ( logger::_theInstance->_haltOnSignal )
+        INFO_LOG( "Break point reached." );
+        if ( handler != nullptr ) handler( sig );
+        if ( kill )
         {
+          FAILURE_LOG( "Forcing program exit on signal." );
           stop();
-          exit( sig );
+          std::exit( sig );
         }
         break;
 
-      case SIGWINCH :
-        INFO_LOG( "Window Size Changed" );
+      case SIGWINCH : // Window resize
+        if ( handler != nullptr ) handler( sig );
+        if ( kill )
+        {
+          INFO_LOG( "Window Resize Signal Received." );
+          FAILURE_LOG( "Forcing program exit on signal." );
+          stop();
+          std::exit( sig );
+        }
         break;
 
-//      case SIGINFO :
-//        INFO_LOG( "Request for Status signal received" ); 
-//        break;
+    // case SIGSTOP : // Un catchable!
+    // case SIGLOST :
+    // case SIGINFO :
+#endif
 
       default:
-        FAILURE_STREAM << "Unexpected Signal " << sig << " Received";
-        if ( logger::_theInstance->_haltOnSignal )
-        {
-          stop();
-          exit( sig );
-        }
+        FAILURE_STREAM << "Unexpected and Unknown Signal " << sig << " Received. Halting process.";
+        stop();
+        std::exit( sig );
         break;
     }
   }
@@ -518,8 +711,6 @@ namespace logtastic
   
   void logger::outputAll( log_depth depth, std::string& str )
   {
-    if ( (!_outputDebug) && ( depth == logtastic::debug ) ) return;
-
     if ( depth >= _screenDepth ) 
     {
       _output << str;
