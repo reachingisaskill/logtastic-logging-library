@@ -1,6 +1,5 @@
 
 #include <iostream>
-//#include "logtastic_check.h"
 
 #define __DEBUG_OFF__
 #include "logtastic.h"

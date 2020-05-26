@@ -12,8 +12,9 @@ void test( int )
 
 int main ( int, char** )
 {
-  logtastic::setDataFileDirectory( "./dat" );
+  logtastic::init();
   logtastic::setLogFileDirectory( "./dat" );
+//  logtastic::preventSignalHandling();
   logtastic::preventHaltOnSignal();
 
   logtastic::registerSignalHandler( test );
@@ -21,10 +22,10 @@ int main ( int, char** )
   logtastic::addLogFile("test.log");
 
 
-  logtastic::init("Logtastic Tests", "1.0");
+  logtastic::start("Logtastic Tests", "1.0");
 
-  logtastic::log( logtastic::info, "Hello Again!");
-  logtastic::init( "HELLO!", "4000" );
+//  logtastic::log( logtastic::info, "main", "Hello Again!");
+  logtastic::start( "HELLO!", "4000" );
 
   INFO_LOG( "Check out my new logging system!" );
 
@@ -41,7 +42,7 @@ int main ( int, char** )
   WARN_STREAM << "HELLO!" << 4;
 
 
-  for ( unsigned int i = 0; i < 100; ++i )
+  for ( unsigned int i = 0; i < 1; ++i )
   {
     VARIABLE_LOG( 1, i, 10 );
     for ( int j = 0; j < 200; ++j )
@@ -50,15 +51,6 @@ int main ( int, char** )
     }
   }
 
-
-  INFO_LOG( "Now testing Data File System!" );
-
-  logtastic::addDataFile( 1, "data_test1.dat" );
-
-  DATA_STREAM( 1 ) << 1 << "\t" << "2";
-
-  logtastic::closeDataFile( 1 );
-  logtastic::closeDataFile( 1 );
 
   while(1) {}
 
