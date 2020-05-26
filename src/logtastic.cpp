@@ -1,8 +1,9 @@
 
 #include "logtastic.h"
 
-#include <chrono>
 #include <iomanip>
+#include <ctime>
+
 
 namespace logtastic
 {
@@ -90,8 +91,8 @@ namespace logtastic
     _programName = name;
     _programVersion = version;
 
-    _startTime = time(0);
-    gettimeofday( &_startClock, 0 );
+    _startTime = std::chrono::system_clock::now();
+    _startClock = std::chrono::steady_clock::now();
 
     // Register exiting functions
     atexit( stop );
@@ -160,6 +161,9 @@ namespace logtastic
     }
 
 
+    std::time_t start_time = std::chrono::system_clock::to_time_t( _startTime );
+    std::tm tm = *std::localtime(&start_time);
+
     // Log initialisation statements
     std::stringstream outputStr;
     outputStr << "\n\tLOGTASTIC LOGGING\n";
@@ -167,7 +171,7 @@ namespace logtastic
     outputStr << "Program Name         : " << _programName << "\n";
     outputStr << "Program Version      : " << _programVersion << "\n\n";
     outputStr << "Log File Directory   : " << _logDirectory << "\n";
-    outputStr << "Logging Initialised  : " << ctime(&_startTime) << "\n\n";
+    outputStr << "Logging Initialised  : " << std::put_time( &tm, "%c %Z" ) << "\n\n";
 
     std::string result = outputStr.str();
     this->outputAll( logtastic::info, result );
@@ -183,22 +187,21 @@ namespace logtastic
     _programName( log._programName ),
     _programVersion( log._programVersion ),
     _output( log._output ),
-    _startTime( time(0) )//,
-    //_startClock( gettimeofday() )
+    _startTime()
   {
-    gettimeofday( &_startClock, 0 );
+    _startTime = std::chrono::system_clock::now();
   }
 
 
   logger::~logger()
   {
-    // Reset the timer
-    _startTime = time(0);
+    std::time_t end_time = std::chrono::system_clock::to_time_t( std::chrono::system_clock::now() );
+    std::tm tm = *std::localtime(&end_time);
 
     // Close all the streams
     std::stringstream outputStr;
     outputStr << "\nEND OF PROGRAM OPERATION\n";
-    outputStr << "\nLogtastic Logging completed at : " << ctime( &_startTime ) << "\n";
+    outputStr << "\nLogtastic Logging completed at : " << std::put_time( &tm, "%c %Z" ) << "\n";
 
     std::string result = outputStr.str();
 
@@ -504,11 +507,10 @@ namespace logtastic
     ss << "- ";
     // USE INSTRUCTIONS HERE!
 
-    timeval timeDiff;
-    gettimeofday( &timeDiff, 0 );
-//    ss << std::setw(8) << std::setfill('0') << (unsigned long int)( timeDiff.tv_sec - _startClock.tv_sec );// << std::setw(3) << ( timeDiff.tv_usec - _startClock.tv_usec ); //time(0);
-//    ss << std::setfill('0') << std::setw(3) << (unsigned long int)( ( ( timeDiff.tv_usec - _startClock.tv_usec ) / 1000 ) % 1000 );
-    ss << std::setw( 11 ) << std::setfill('0') << (unsigned long int)( timeDiff.tv_sec - _startClock.tv_sec ) * 1000 + ( timeDiff.tv_usec - _startClock.tv_usec ) / 1000;
+//    std::chrono::duration<double> timediff = std::chrono::steady_clock::now() - _startClock;
+//    ss << std::fixed << std::setw( 11 ) << std::setfill('0') << std::setprecision( 4 ) << timediff.count();
+    std::chrono::milliseconds timediff = std::chrono::duration_cast<std::chrono::milliseconds>( std::chrono::steady_clock::now() - _startClock );
+    ss << std::setw( 11 ) << std::setfill('0') << timediff.count();
      
     ss << "] ";
     return ss.str();

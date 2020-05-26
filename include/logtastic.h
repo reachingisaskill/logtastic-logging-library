@@ -13,11 +13,10 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <chrono>
 
 #include <cstdlib>
 #include <csignal>
-#include <ctime>
-#include <sys/time.h>
 
 
 ///////////////////////////////////////////////
@@ -185,8 +184,8 @@ namespace logtastic
       std::ostream& _output;
 
       // Time data
-      time_t _startTime;
-      timeval _startClock;
+      std::chrono::system_clock::time_point _startTime;
+      std::chrono::steady_clock::time_point _startClock;
 
       // Helper functions
       std::string getPrefix( log_depth );
