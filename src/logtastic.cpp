@@ -1,6 +1,7 @@
 
 #include "logtastic.h"
 
+#include <algorithm>
 #include <iomanip>
 #include <ctime>
 
@@ -177,15 +178,25 @@ namespace logtastic
 
 
     // Make sure directories exist
+    int mkdir_result;
     std::stringstream command;
 #if defined _WIN32
-    command << "md " << _logDirectory;
+    std::replace( _logDirectory.begin(), _logDirectory.end(), '/', '\\' );
+    command << "dir " << _logDirectory << " 1>nul 2>nul";
+    mkdir_result = std::system( command.str().c_str() );
+    if ( mkdir_result )
+    {
+      command.str( "" );
+      command << "md " << _logDirectory << " 1>nul 2>nul";
+      mkdir_result = std::system( command.str().c_str() );
+    }
 #elif defined __linux__
     command << "mkdir -p " << _logDirectory;
+    mkdir_result = std::system( command.str().c_str() );
 #else // Might as well try this one
     command << "mkdir " << _logDirectory;
+    mkdir_result = std::system( command.str().c_str() );
 #endif
-    int mkdir_result = std::system( command.str().c_str() );
 
     if ( mkdir_result )
     {

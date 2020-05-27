@@ -21,13 +21,7 @@
 
 ///////////////////////////////////////////////
 
-#ifndef LOGTASTIC_VERSION
 #define LOGTASTIC_VERSION "0.5"
-#endif
-
-#ifndef LOGTASTIC_LOG_FILE_DIRECTORY
-#define LOGTASTIC_LOG_FILE_DIRECTORY "./"
-#endif
 
 ///////////////////////////////////////////////
 //
@@ -46,6 +40,11 @@
 #define LOGTASTIC_FUNCTION_NAME __FUNCTION__
 #endif
 
+#ifndef LOGTASTIC_LOG_FILE_DIRECTORY
+#define LOGTASTIC_LOG_FILE_DIRECTORY ".\\"
+#endif
+
+
 #elif defined __linux__ // linux
 
 #define LOGTASTIC_NUMBER_SIGNALS 25
@@ -54,12 +53,20 @@
 #define LOGTASTIC_FUNCTION_NAME __func__
 #endif
 
+#ifndef LOGTASTIC_LOG_FILE_DIRECTORY
+#define LOGTASTIC_LOG_FILE_DIRECTORY "./"
+#endif
+
 #else // Just use the default
 
 #define LOGTASTIC_NUMBER_SIGNALS 6
 
 #ifndef LOGTASTIC_FUNCTION_NAME
 #define LOGTASTIC_FUNCTION_NAME __func__
+#endif
+
+#ifndef LOGTASTIC_LOG_FILE_DIRECTORY
+#define LOGTASTIC_LOG_FILE_DIRECTORY "./"
 #endif
 
 #endif
