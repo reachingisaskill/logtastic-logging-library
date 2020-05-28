@@ -167,6 +167,7 @@ ${TMP_DIR} :
 
 clean :
 	rm -f ${TMP_DIR}/*
+	rm -f ${LIBRARY}
 	rm -f ${PROGRAMS}
 
 
