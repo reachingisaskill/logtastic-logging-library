@@ -141,7 +141,9 @@ namespace logtastic
 
     // Register exiting functions
     std::atexit( stop );
-    std::at_quick_exit( stop );
+#ifdef __linux__
+    at_quick_exit( stop );
+#endif
 
     // Register signal handlers
     std::signal( SIGABRT, logtastic_signal_handler ); // Abort
