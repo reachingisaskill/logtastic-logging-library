@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <ctime>
+#include <cmath>
 
 
 // Local definitions
@@ -105,18 +106,25 @@ namespace logtastic
     _isRunning( false ),
     _loggingThread(),
     _statementQueue(),
-    _statementQueueMutex(),
+//    _statementQueueMutex(),
     _stopThread( false ),
     _queueSizeWarning( 10000 ),
+    _maxFileSize( 100000 ),
 
     _programName(),
     _programVersion(),
     _output( stream ),
+    _logDirectory( LOGTASTIC_LOG_FILE_DIRECTORY ),
+    _baseFilename( "logtastic.log" ),
+    _numberFiles( 1 ),
+    _currentFileID( 0 ),
+    _files(),
+    _currentFile(),
+
     _startTime(),
     _startClock(),
+
     _userSignalHandlers(),
-    _logDirectory( LOGTASTIC_LOG_FILE_DIRECTORY ),
-    _filenames( 0, std::string("") ),
     _flushOnCall( true ),
     _screenDepth( logtastic::warn ),
     _variableLogDepth( logtastic::info ),
@@ -178,6 +186,11 @@ namespace logtastic
     // sigaction( SIGINFO, logtastic_signal_handler ); // Status request from lead process // NOT RECOGNISED
 #endif
 
+    // Default to linux style
+    std::replace( _logDirectory.begin(), _logDirectory.end(), '\\', '/' );
+    // Ends in a slash
+    if ( _logDirectory.back() != '/' )
+      _logDirectory.push_back( '/' );
 
     // Make sure directories exist
     int mkdir_result;
@@ -207,73 +220,33 @@ namespace logtastic
     }
 
 
-    // Initialise output fstreams
-    for ( std::list< std::string >::iterator it = _filenames.begin(); it != _filenames.end(); ++it )
+    // Initialise output
+    _files.reserve( _numberFiles );
+    int width = std::log10( _numberFiles ) + 1;
+    for( size_t i = 0; i < _numberFiles; ++i )
     {
-      std::ofstream* ofst = new std::ofstream( it->c_str() );
-      if ( ! ofst->is_open() )
-      {
-        std::cerr << "Could Not Open File (" << (*it) << ") For Writing - Trying again\n";
-        ofst = new std::ofstream( it->c_str() );
-        if ( ! ofst->is_open() )
-          std::cerr << "Could Not Open File For Writing - Skipping\n";
-      } 
-      _files.push_back( ofst );
+      std::stringstream file_path;
+      file_path << _logDirectory << _baseFilename << '.' << std::setw( width ) << std::setfill( '0' ) << i;
+      _files.push_back( file_path.str() );
     }
 
-
-    std::time_t start_time = std::chrono::system_clock::to_time_t( _startTime );
-    std::tm tm = *std::localtime(&start_time);
-
-    // Log initialisation statements
-    std::stringstream outputStr;
-    outputStr << "\n\tLOGTASTIC LOGGING\n";
-    outputStr << "Version - " << LOGTASTIC_VERSION << "\n\n";
-    outputStr << "Program Name         : " << _programName << "\n";
-    outputStr << "Program Version      : " << _programVersion << "\n\n";
-    outputStr << "Log File Directory   : " << _logDirectory << "\n";
-    outputStr << "Logging Initialised  : " << std::put_time( &tm, "%c %Z" ) << "\n\n";
-
-    std::string result = outputStr.str();
-    this->outputAll( logtastic::info, result );
-    this->flush();
+    _currentFile = std::ofstream( _files[_currentFileID++].c_str() );
+    if ( ! _currentFile.is_open() )
+    {
+      std::cerr << "Could Not Open File (" << _files[0] << ") For Writing" << std::endl;
+      std::abort();
+    } 
 
     // Start the logging thread
+    _isRunning = true;
     _loggingThread = std::thread( logging_thread_function );
-    _isRunning =true;
-  }
-
-
-  logger::logger( const logger& log ) :
-    _programName( log._programName ),
-    _programVersion( log._programVersion ),
-    _output( log._output ),
-    _startTime()
-  {
-    _startTime = std::chrono::system_clock::now();
   }
 
 
   logger::~logger()
   {
-    std::time_t end_time = std::chrono::system_clock::to_time_t( std::chrono::system_clock::now() );
-    std::tm tm = *std::localtime(&end_time);
-
-    // Close all the streams
-    std::stringstream outputStr;
-    outputStr << "\nEND OF PROGRAM OPERATION\n";
-    outputStr << "\nLogtastic Logging completed at : " << std::put_time( &tm, "%c %Z" ) << "\n";
-
-    std::string result = outputStr.str();
-
-    this->outputAll( logtastic::info, result );
-    this->flush();
-    
-    for ( std::list< std::ofstream* >::iterator it = _files.begin(); it != _files.end(); ++it )
-    {
-      (*it)->close();
-      delete (*it);
-    }
+    if ( _currentFile.is_open() )
+      _currentFile.close();
   }
 
 
@@ -281,9 +254,77 @@ namespace logtastic
   {
     // Close the buffer thread
     _stopThread = true;
+    _statementQueue.setFlag( true );
     _loggingThread.join();
   }
 
+
+  void logger::nextFile()
+  {
+    // Close current
+    _currentFile.close();
+    // Open the next
+    _currentFile = std::ofstream( _files[ _currentFileID++ ] );
+    // Update the counter
+    if ( _currentFileID == _numberFiles )
+      _currentFileID = 0;
+  }
+
+
+  void logger::writeIntro()
+  {
+    std::time_t start_time = std::chrono::system_clock::to_time_t( _startTime );
+    std::tm tm = *std::localtime(&start_time);
+    std::time_t file_start_time = std::chrono::system_clock::to_time_t( std::chrono::system_clock::now() );
+    std::tm file_tm = *std::localtime(&file_start_time);
+
+    // Log initialisation statements
+    std::stringstream outputStr;
+    outputStr << "\nLOGTASTIC LOGGING\n";
+    outputStr << "Version - " << LOGTASTIC_VERSION << "\n\n";
+    outputStr << "Program Name         : " << _programName << "\n";
+    outputStr << "Program Version      : " << _programVersion << "\n\n";
+    outputStr << "Log File Directory   : " << _logDirectory << "\n";
+    outputStr << "Number Log Files     : " << _numberFiles << '\n';
+    outputStr << "Logging Initialised  : " << std::put_time( &tm, "%c %Z" ) << "\n\n";
+
+    outputStr << "Current File         : " << _currentFileID << '\n';
+    outputStr << "File Opened          : " << std::put_time( &file_tm, "%c %Z" ) << "\n\n";
+
+    std::string result = outputStr.str();
+    this->outputAll( logtastic::info, result );
+    this->flush();
+  }
+
+
+  void logger::writeFileOutro()
+  {
+    std::time_t file_start_time = std::chrono::system_clock::to_time_t( std::chrono::system_clock::now() );
+    std::tm file_tm = *std::localtime(&file_start_time);
+
+    // Log initialisation statements
+    std::stringstream outputStr;
+    outputStr << "\nEND OF FILE\n";
+    outputStr << "File Closed at: " << std::put_time( &file_tm, "%c %Z" ) << "\n\n";
+
+    std::string result = outputStr.str();
+    this->outputAll( logtastic::info, result );
+    this->flush();
+  }
+
+  void logger::writeOutro()
+  {
+    std::time_t stop_time = std::chrono::system_clock::to_time_t( std::chrono::system_clock::now() );
+    std::tm tm = *std::localtime(&stop_time);
+
+    std::stringstream outputStr;
+    outputStr << "\nEND OF PROGRAM OPERATION\n";
+    outputStr << "Program finished at: " << std::put_time( &tm, "%c %Z" ) << "\n\n";
+
+    std::string result = outputStr.str();
+    this->outputAll( logtastic::info, result );
+    this->flush();
+  }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
   //  Friend Functions 
@@ -306,10 +347,7 @@ namespace logtastic
     st.function = function;
     st.text = text;
 
-    {
-      std::lock_guard<std::mutex> lock( theLogger->_statementQueueMutex );
-      theLogger->_statementQueue.push( st );
-    }
+    theLogger->_statementQueue.push( st );
   }
 
 
@@ -323,7 +361,7 @@ namespace logtastic
 
   void start( const char* name, const char* version )
   {
-    if ( logger::_theInstance == 0 )
+    if ( logger::_theInstance == nullptr )
     {
       logger::_theInstance = new logger();
     }
@@ -334,7 +372,7 @@ namespace logtastic
     }
     else
     {
-      ERROR_LOG( "Trying to start logging while it is already running." );
+      WARN_LOG( "Trying to start logging while it is already running." );
     }
   }
 
@@ -346,16 +384,15 @@ namespace logtastic
       logger::_theInstance->stopThread();
 
       delete logger::_theInstance;
-      logger::_theInstance = 0;
+      logger::_theInstance = nullptr;
     }
   }
 
 
-  void addLogFile( const char* fileName )
+  void setLogFile( const char* fileName )
   {
-    std::string fileString = logger::_theInstance->_logDirectory + "/" + fileName;
     if ( logger::_theInstance->_isRunning == false )
-      logger::_theInstance->_filenames.push_back( fileString );
+      logger::_theInstance->_baseFilename = std::string( fileName );
     else
       ERROR_LOG( "Attempted to add another output file after logger initialisation" );
   }
@@ -374,6 +411,22 @@ namespace logtastic
       logger::_theInstance->_queueSizeWarning = limit;
     else
       ERROR_LOG( "Attempted to change the queue size limit after initialisation" );
+  }
+
+  void setMaxFileSize( unsigned long size )
+  {
+    if ( logger::_theInstance->_isRunning == false )
+      logger::_theInstance->_maxFileSize = size;
+    else
+      ERROR_LOG( "Attempted to change the max file size after initialisation" );
+  }
+
+  void setMaxNumberFiles( unsigned long size )
+  {
+    if ( logger::_theInstance->_isRunning == false )
+      logger::_theInstance->_numberFiles = size;
+    else
+      ERROR_LOG( "Attempted to change the max file size after initialisation" );
   }
 
   void setFlushOnEveryCall( bool flush )
@@ -716,9 +769,7 @@ namespace logtastic
 //    std::chrono::duration<double> timediff = std::chrono::steady_clock::now() - _startClock;
 //    ss << std::fixed << std::setw( 11 ) << std::setfill('0') << std::setprecision( 4 ) << timediff.count();
     std::chrono::milliseconds timediff = std::chrono::duration_cast<std::chrono::milliseconds>( std::chrono::steady_clock::now() - _startClock );
-    ss << std::setw( 11 ) << std::setfill('0') << timediff.count();
-     
-    ss << "] ";
+    ss << std::setw( 11 ) << std::setfill('0') << timediff.count() << "] ";
     return ss.str();
   }
   
@@ -729,21 +780,14 @@ namespace logtastic
       _output << str;
     }
 
-    for ( std::list< std::ofstream* >::iterator it = _files.begin(); it != _files.end(); ++it )
-    {
-      *(*it) << str;
-    }
+    _currentFile << str;
   }
   
 
   void logger::flush()
   {
     _output.flush();
-    //return;
-    for ( std::list< std::ofstream* >::iterator it = _files.begin(); it != _files.end(); ++it )
-    {
-      (*it)->flush();
-    }
+    _currentFile.flush();
   }
 
 
@@ -767,80 +811,133 @@ namespace logtastic
 ////////////////////////////////////////////////////////////////////////////////
   // The logging thread.
 
-  bool notify_check()
-  {
-    static logger* theLogger = logger::get();
-    std::lock_guard< std::mutex > statementQueueLock( theLogger->_statementQueueMutex );
-    bool answer = theLogger->_statementQueue.size() > 0;
-    return answer;
-  }
-
-
   void logging_thread_function()
   {
     static logger* theLogger = logger::get();
-    std::unique_lock< std::mutex > lock( theLogger->_statementQueueMutex, std::defer_lock );
+    MutexedBuffer<statement>& buffer = theLogger->_statementQueue;
     statement current_statement;
     size_t number = 0;
     size_t warning_limit = theLogger->_queueSizeWarning;
     size_t throttling_limit = 0.8*theLogger->_queueSizeWarning;
+    unsigned int max_file_size = theLogger->_maxFileSize;
+    unsigned int numberEntries = 0;
 
-    lock.lock();
-    number = theLogger->_statementQueue.size();
-    lock.unlock();
+    theLogger->writeIntro();
 
-//    while ( (! logger::_theInstance->_stopThread) ||  notify_check() )
-    do
+    while ( buffer.waitPop( current_statement ) )
     {
-      if ( number > warning_limit )
+      theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
+      ++numberEntries;
+
+//      if ( number > warning_limit )
+//      {
+//        lock.lock(); // Block the submitting threads - reduce queue size to more sensible level
+//
+//        std::stringstream ss;
+//        ss << "Logging buffer size: " << number << ", exceeding limits, throttling to 80%";
+//        theLogger->Log_Statement( warn, "logging_thread_function", ss.str() );
+//
+//        while ( number > throttling_limit )
+//        {
+//          current_statement = theLogger->_statementQueue.front();
+//          theLogger->_statementQueue.pop();
+//
+//          theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
+//          ++numberEntries;
+//          --number;
+//        }
+//        lock.unlock();
+//      }
+
+      if ( numberEntries > max_file_size )
       {
-        lock.lock(); // Block the submitting threads - reduce queue size to more sensible level
+        theLogger->writeFileOutro();
+        theLogger->nextFile();
+        theLogger->writeIntro();
 
-        std::stringstream ss;
-        ss << "Logging buffer size: " << number << ", exceeding limits, throttling to 80%";
-        theLogger->Log_Statement( warn, "logging_thread_function", ss.str() );
-
-        while ( number > throttling_limit )
-        {
-          current_statement = theLogger->_statementQueue.front();
-          theLogger->_statementQueue.pop();
-
-          theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
-          --number;
-        }
-        lock.unlock();
+        numberEntries = 0;
       }
-      else if ( number > 0 )
-      {
-        lock.lock();
-        current_statement = theLogger->_statementQueue.front();
-        theLogger->_statementQueue.pop();
-        lock.unlock();
-
-        theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
-      }
-      else
-      {
-        std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
-      }
-
-      lock.lock();
-      number = theLogger->_statementQueue.size();
-      lock.unlock();
     }
-    while ( (! logger::_theInstance->_stopThread) || ( number > 0 ) );
 
     // Empty what's left
-    lock.lock();
-    while ( ! theLogger->_statementQueue.empty() )
+    while ( buffer.pop( current_statement ) )
     {
-      current_statement = theLogger->_statementQueue.front();
-      theLogger->_statementQueue.pop();
-
       theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
     }
-    lock.unlock();
+
+    theLogger->writeOutro();
   }
 
 } // logtastic
+
+
+//  void logging_thread_function()
+//  {
+//    static logger* theLogger = logger::get();
+//    std::unique_lock< std::mutex > lock( theLogger->_statementQueueMutex, std::defer_lock );
+//    statement current_statement;
+//    size_t number = 0;
+//    size_t warning_limit = theLogger->_queueSizeWarning;
+//    size_t throttling_limit = 0.8*theLogger->_queueSizeWarning;
+//    unsigned int max_file_size = theLogger->_maxFileSize;
+//    unsigned int numberEntries = 0;
+//
+//    lock.lock();
+//    number = theLogger->_statementQueue.size();
+//    lock.unlock();
+//
+////    while ( (! logger::_theInstance->_stopThread) ||  notify_check() )
+//    do
+//    {
+//      if ( number > warning_limit )
+//      {
+//        lock.lock(); // Block the submitting threads - reduce queue size to more sensible level
+//
+//        std::stringstream ss;
+//        ss << "Logging buffer size: " << number << ", exceeding limits, throttling to 80%";
+//        theLogger->Log_Statement( warn, "logging_thread_function", ss.str() );
+//
+//        while ( number > throttling_limit )
+//        {
+//          current_statement = theLogger->_statementQueue.front();
+//          theLogger->_statementQueue.pop();
+//
+//          theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
+//          ++numberEntries;
+//          --number;
+//        }
+//        lock.unlock();
+//      }
+//      else if ( number > 0 )
+//      {
+//        lock.lock();
+//        current_statement = theLogger->_statementQueue.front();
+//        theLogger->_statementQueue.pop();
+//        lock.unlock();
+//
+//        theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
+//        ++numberEntries;
+//      }
+//      else
+//      {
+//        std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
+//      }
+//
+//      lock.lock();
+//      number = theLogger->_statementQueue.size();
+//      lock.unlock();
+//    }
+//    while ( (! logger::_theInstance->_stopThread) || ( number > 0 ) );
+//
+//    // Empty what's left
+//    lock.lock();
+//    while ( ! theLogger->_statementQueue.empty() )
+//    {
+//      current_statement = theLogger->_statementQueue.front();
+//      theLogger->_statementQueue.pop();
+//
+//      theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
+//    }
+//    lock.unlock();
+//  }
 

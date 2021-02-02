@@ -2,6 +2,8 @@
 #ifndef LOGTASTIC_H_
 #define LOGTASTIC_H_
 
+#include "MutexedBuffer.h"
+
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -21,7 +23,7 @@
 
 ///////////////////////////////////////////////
 
-#define LOGTASTIC_VERSION "0.5"
+#define LOGTASTIC_VERSION "1.0"
 
 ///////////////////////////////////////////////
 //
@@ -179,8 +181,12 @@ namespace logtastic
 
     private:
       logger( std::ostream& st = std::cout );// Constructor
-      logger( const logger& ); // Copy Constructor
-      logger& operator=( const logger& ) { return *this; }; // Assignment Operator
+
+      logger( const logger& ) = delete;
+      logger& operator=( const logger& ) = delete;
+      logger( logger&& ) = delete;
+      logger& operator=( logger&& ) = delete;
+
       ~logger(); // Destructor
 
       bool _isRunning;
@@ -192,35 +198,43 @@ namespace logtastic
 
       // Thread specific data
       std::thread _loggingThread;
-      std::queue< statement > _statementQueue;
-      std::mutex _statementQueueMutex;
+      MutexedBuffer<statement> _statementQueue;
+//      std::mutex _statementQueueMutex;
       std::atomic_bool _stopThread;
       size_t _queueSizeWarning;
+      unsigned long _maxFileSize;
 
       // Program data
       std::string _programName;
       std::string _programVersion;
-      std::list< std::ofstream* > _files;
       std::ostream& _output;
+
+      // File options
+      std::string _logDirectory;
+      std::string _baseFilename;
+      size_t _numberFiles;
+      size_t _currentFileID;
+      std::vector< std::string > _files;
+      std::ofstream _currentFile;
 
       // Time data
       std::chrono::system_clock::time_point _startTime;
       std::chrono::steady_clock::time_point _startClock;
 
-      // Helper functions
-      std::string getPrefix( log_depth );
-      void outputAll( log_depth, std::string& );
-
       // Signal action object
       SignalHandler _userSignalHandlers[LOGTASTIC_NUMBER_SIGNALS];
 
       // Options configuration
-      std::string _logDirectory;
-      std::list< std::string > _filenames;
       bool _flushOnCall;
       log_depth _screenDepth;
       log_depth _variableLogDepth;
       bool _haltOnSignal[LOGTASTIC_NUMBER_SIGNALS];
+
+
+      ////////////////////////////////////////////////////////////////
+      // Helper functions
+      std::string getPrefix( log_depth );
+      void outputAll( log_depth, std::string& );
 
 
       ////////////////////////////////////////////////////////////////
@@ -230,8 +244,13 @@ namespace logtastic
       template < typename T >
       logger& Log_Variable( log_depth, const char*, const char*, T& );
 
+      // Prettyness in the files
+      void writeIntro();
+      void writeFileOutro();
+      void writeOutro();
       void flush();
 
+      void nextFile();
       void stopThread();
 
     public:
@@ -260,10 +279,12 @@ namespace logtastic
 
       ////////////////////////////////////////////////////////////////
       // Functions to configure the options (User should never interact directly with the "logger" object
-      friend void addLogFile( const char* );
+      friend void setLogFile( const char* );
       friend void setLogFileDirectory( const char* );
 
       friend void setQueueSizeWarning( size_t );
+      friend void setMaxFileSize( unsigned long );
+      friend void setMaxNumberFiles( unsigned long size );
 
       friend void setFlushOnEveryCall( bool );
       friend void setPrintToScreenLimit( log_depth );
@@ -297,10 +318,12 @@ namespace logtastic
   void start( const char*, const char* );
   void stop();
 
-  void addLogFile( const char* );
+  void setLogFile( const char* );
   void setLogFileDirectory( const char* );
 
   void setQueueSizeWarning( size_t );
+  void setMaxFileSize( unsigned long );
+  void setMaxNumberFiles( unsigned long size );
 
   void setFlushOnEveryCall( bool );
   void setPrintToScreenLimit( log_depth );
@@ -366,7 +389,6 @@ namespace logtastic
       st.text = ss.str();
       count = 1;
 
-      std::lock_guard<std::mutex> lock( theLogger->_statementQueueMutex );
       theLogger->_statementQueue.push( st );
     }
     else

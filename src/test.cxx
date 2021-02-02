@@ -18,7 +18,7 @@ int main ( int, char** )
   logtastic::registerSignalHandler( SIGINT, test );
   logtastic::setHaltOnSignal( SIGINT, true );
 
-  logtastic::addLogFile("test.log");
+  logtastic::setLogFile("test.log");
 
 
   logtastic::start("Logtastic Tests", "1.0");
@@ -34,7 +34,7 @@ int main ( int, char** )
 
   DEBUG_LOG( "Debugging Info Here..." );
 
-  logtastic::addLogFile( "hello!" );
+  logtastic::setLogFile( "hello!" );
 
   std::cout << "HELLO WORLD!" << std::endl;
 

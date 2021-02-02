@@ -24,7 +24,7 @@ int main ( int, char** )
   logtastic::init();
   logtastic::setLogFileDirectory( "./dat" );
   logtastic::setPrintToScreenLimit( logtastic::failure );
-  logtastic::addLogFile("test3.log");
+  logtastic::setLogFile("test3.log");
 
   logtastic::start("Logtastic Tests", "1.0");
 
