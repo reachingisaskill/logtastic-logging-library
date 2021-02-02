@@ -59,9 +59,10 @@ INSTALL_DIR = ${HEAD}
 
 
 # The Compiler
-#CCC = g++ -g  -Wall -Wextra -pedantic ${DEFINES}
+CCC = g++ -g  -Wall -Wextra -pedantic ${DEFINES}
 # CCC = g++ -O2 -Wall -Wextra -pedantic ${DEFINES} # Optimized Compilation
-CCC = x86_64-w64-mingw32-g++ -g -Wall -Wextra -pedantic ${DEFINES}
+#CCC = x86_64-w64-mingw32-g++ -g -Wall -Wextra -pedantic ${DEFINES}
+ARCHIVE = ar rcs
 
 
 ##############################################################################################
@@ -91,16 +92,22 @@ OBJECTS = $(patsubst %.cpp,$(TMP_DIR)/%.o,$(filter %.cpp,$(SRC_FILES)))
 EXE_OBJ = $(patsubst %.cxx,$(TMP_DIR)/%.exe.o,${EXE_SRC})
 
 LIBRARY   = ${LIB_DIR}/${LIB_NAME}.dll
+LIBRARY_STATIC   = ${LIB_DIR}/${LIB_NAME}.lib
 PROGRAMS  = $(patsubst %.cxx,${BIN_DIR}/%.exe,${EXE_SRC})
 PROGNAMES = $(notdir ${PROGRAMS})
 
 
 
-.PHONY : program all _all build install clean buildall directories includes intro single_intro check_install
+.PHONY : program all _all build install clean buildall directories library includes intro library_intro single_intro check_install
 
 
 
-all : intro directories ${LIBRARY} ${PROGRAMS}
+all : intro directories ${LIBRARY} ${LIBRARY_STATIC} ${PROGRAMS}
+	@echo "Make Completed Successfully"
+	@echo
+
+
+library : library_intro directories ${LIBRARY} ${LIBRARY_STATIC}
 	@echo "Make Completed Successfully"
 	@echo
 
@@ -112,6 +119,12 @@ ${PROGNAMES} : % : single_intro ${BIN_DIR}/%
 
 intro :
 	@echo "Building All Program(s) : "$(notdir ${PROGRAMS})
+	@echo "Please Wait..."
+	@echo
+
+
+library_intro :
+	@echo "Building Library Only"
 	@echo "Please Wait..."
 	@echo
 
@@ -128,9 +141,17 @@ ${PROGRAMS} : ${BIN_DIR}/% : ${TMP_DIR}/%.o
 	@echo "Target : "$(notdir $(basename $@))" Successfully Built"
 	@echo
 
+
 ${LIBRARY} : ${OBJECTS}
 	@echo " - Building Library : " ${LIB_NAME}
 	@${CCC} ${LIB_COMP_FLAGS} -o $@ $^ ${INC_FLAGS} ${LIB_FLAGS}
+	@echo "Library : "${LIB_NAME}" Successfully Built"
+	@echo
+
+
+${LIBRARY_STATIC} : ${OBJECTS}
+	@echo " - Building Library : " ${LIB_NAME}
+	@${ARCHIVE} $@ $^
 	@echo "Library : "${LIB_NAME}" Successfully Built"
 	@echo
 
@@ -168,7 +189,8 @@ ${TMP_DIR} :
 
 clean :
 	rm -f ${TMP_DIR}/*
-	rm -f ${LIBRARY}/*
+	rm -f ${LIBRARY}
+	rm -f ${LIBRARY_STATIC}
 	rm -f ${PROGRAMS}
 
 

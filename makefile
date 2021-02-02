@@ -95,11 +95,16 @@ PROGNAMES = $(notdir ${PROGRAMS})
 
 
 
-.PHONY : program all _all build install clean buildall directories includes intro single_intro check_install
+.PHONY : program all _all build install clean buildall directories library includes intro library_intro single_intro check_install
 
 
 
 all : intro directories ${LIBRARY} ${PROGRAMS}
+	@echo "Make Completed Successfully"
+	@echo
+
+
+library : library_intro directories ${LIBRARY}
 	@echo "Make Completed Successfully"
 	@echo
 
@@ -111,6 +116,12 @@ ${PROGNAMES} : % : single_intro ${BIN_DIR}/%
 
 intro :
 	@echo "Building All Program(s) : "$(notdir ${PROGRAMS})
+	@echo "Please Wait..."
+	@echo
+
+
+library_intro :
+	@echo "Building Library Only"
 	@echo "Please Wait..."
 	@echo
 
