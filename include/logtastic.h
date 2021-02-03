@@ -2,8 +2,6 @@
 #ifndef LOGTASTIC_H_
 #define LOGTASTIC_H_
 
-#include "MutexedBuffer.h"
-
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -14,6 +12,7 @@
 #include <map>
 #include <thread>
 #include <mutex>
+#include <condition_variable>
 #include <atomic>
 #include <chrono>
 
@@ -29,6 +28,10 @@
 //
 // IF DEFINED LOGTASTIC_DEBUG_OFF
 // THEN all debug log statements are disabled!
+//
+// IF DEFINED LOGTASTIC_ALL_LOGGING_DISABLED
+// All logging statements become null conditional expressions
+// To optimize away the logging statements, compile with -O1 or higher
 // 
 ////////////////////////////////////////////////
 
@@ -38,9 +41,9 @@
 
 #define LOGTASTIC_NUMBER_SIGNALS 6
 
-#ifndef LOGTASTIC_FUNCTION_NAME
-#define LOGTASTIC_FUNCTION_NAME __FUNCTION__
-#endif
+//#ifndef LOGTASTIC_FUNCTION_NAME
+//#define LOGTASTIC_FUNCTION_NAME __FUNCTION__
+//#endif
 
 #ifndef LOGTASTIC_LOG_FILE_DIRECTORY
 #define LOGTASTIC_LOG_FILE_DIRECTORY ".\\"
@@ -51,9 +54,9 @@
 
 #define LOGTASTIC_NUMBER_SIGNALS 25
 
-#ifndef LOGTASTIC_FUNCTION_NAME
-#define LOGTASTIC_FUNCTION_NAME __func__
-#endif
+//#ifndef LOGTASTIC_FUNCTION_NAME
+//#define LOGTASTIC_FUNCTION_NAME __func__
+//#endif
 
 #ifndef LOGTASTIC_LOG_FILE_DIRECTORY
 #define LOGTASTIC_LOG_FILE_DIRECTORY "./"
@@ -63,9 +66,9 @@
 
 #define LOGTASTIC_NUMBER_SIGNALS 6
 
-#ifndef LOGTASTIC_FUNCTION_NAME
-#define LOGTASTIC_FUNCTION_NAME __func__
-#endif
+//#ifndef LOGTASTIC_FUNCTION_NAME
+//#define LOGTASTIC_FUNCTION_NAME __func__
+//#endif
 
 #ifndef LOGTASTIC_LOG_FILE_DIRECTORY
 #define LOGTASTIC_LOG_FILE_DIRECTORY "./"
@@ -76,20 +79,18 @@
 ///////////////////////////////////////////////
 #define LOGTASTIC_LOG_FUNCTION( d, f, t ) logtastic::push(d, f, t)
 #define LOGTASTIC_VARIABLE_FUNCTION( i, n, f, v, c) logtastic::pushVariable< i >( n, f, v, c )
-//#define LOGTASTIC_LOG_FUNCTION( d, f, t ) logtastic::log( d, f, t )
-//#define LOGTASTIC_VARIABLE_FUNCTION( i, n, f, v, c) logtastic::recordVariable< i >( n, f, v, c )
 
 ///////////////////////////////////////////////
 
 #if defined(LOGTASTIC_DEBUG_OFF) || defined(LOGTASTIC_ALL_LOGGING_DISABLED)
 
-#define DEBUG_LOG( log_messege ) do{}while(0)
-#define DEBUG_STREAM             if(0) logtastic::messege( logtastic::debug, LOGTASTIC_FUNCTION_NAME )
+#define DEBUG_LOG( log_message ) do{}while(0)
+#define DEBUG_STREAM             if(0) logtastic::message( logtastic::debug, LOGTASTIC_FUNCTION_NAME )
 
 #else
 
-#define DEBUG_LOG( log_messege ) LOGTASTIC_LOG_FUNCTION( logtastic::debug, LOGTASTIC_FUNCTION_NAME, log_messege )
-#define DEBUG_STREAM             logtastic::messege( logtastic::debug, LOGTASTIC_FUNCTION_NAME )
+#define DEBUG_LOG( log_message ) LOGTASTIC_LOG_FUNCTION( logtastic::debug, LOGTASTIC_FUNCTION_NAME, log_message )
+#define DEBUG_STREAM             logtastic::message( logtastic::debug, LOGTASTIC_FUNCTION_NAME )
 
 #endif
 
@@ -98,35 +99,70 @@
 #ifndef LOGTASTIC_ALL_LOGGING_DISABLED
 // MACROS ENABLED
 
-#define INFO_LOG( log_messege )    LOGTASTIC_LOG_FUNCTION( logtastic::info, LOGTASTIC_FUNCTION_NAME, log_messege )
-#define WARN_LOG( log_messege )    LOGTASTIC_LOG_FUNCTION( logtastic::warn, LOGTASTIC_FUNCTION_NAME, log_messege )
-#define ERROR_LOG( log_messege )   LOGTASTIC_LOG_FUNCTION( logtastic::error, LOGTASTIC_FUNCTION_NAME, log_messege )
-#define FAILURE_LOG( log_messege ) LOGTASTIC_LOG_FUNCTION( logtastic::failure, LOGTASTIC_FUNCTION_NAME, log_messege )
+#ifdef LOGTASTIC_FUNCTION_NAME
 
-#define INFO_STREAM logtastic::messege( logtastic::info, LOGTASTIC_FUNCTION_NAME )
-#define WARN_STREAM logtastic::messege( logtastic::warn, LOGTASTIC_FUNCTION_NAME )
-#define ERROR_STREAM logtastic::messege( logtastic::error, LOGTASTIC_FUNCTION_NAME )
-#define FAILURE_STREAM logtastic::messege( logtastic::failure, LOGTASTIC_FUNCTION_NAME )
+#define INFO_LOG( log_message )    LOGTASTIC_LOG_FUNCTION( logtastic::info, LOGTASTIC_FUNCTION_NAME, log_message )
+#define WARN_LOG( log_message )    LOGTASTIC_LOG_FUNCTION( logtastic::warn, LOGTASTIC_FUNCTION_NAME, log_message )
+#define ERROR_LOG( log_message )   LOGTASTIC_LOG_FUNCTION( logtastic::error, LOGTASTIC_FUNCTION_NAME, log_message )
+#define FAILURE_LOG( log_message ) LOGTASTIC_LOG_FUNCTION( logtastic::failure, LOGTASTIC_FUNCTION_NAME, log_message )
+
+#define INFO_STREAM logtastic::message( logtastic::info, LOGTASTIC_FUNCTION_NAME )
+#define WARN_STREAM logtastic::message( logtastic::warn, LOGTASTIC_FUNCTION_NAME )
+#define ERROR_STREAM logtastic::message( logtastic::error, LOGTASTIC_FUNCTION_NAME )
+#define FAILURE_STREAM logtastic::message( logtastic::failure, LOGTASTIC_FUNCTION_NAME )
 
 #define VARIABLE_LOG( id, variable, count ) LOGTASTIC_VARIABLE_FUNCTION( id, #variable, LOGTASTIC_FUNCTION_NAME, variable, count )
 
-#else
+#else // Not Defined LOGTASTIC_FUNCTION_NAME
+
+#define INFO_LOG( function_name, log_message )    LOGTASTIC_LOG_FUNCTION( logtastic::info, function_name, log_message )
+#define WARN_LOG( function_name, log_message )    LOGTASTIC_LOG_FUNCTION( logtastic::warn, function_name, log_message )
+#define ERROR_LOG( function_name, log_message )   LOGTASTIC_LOG_FUNCTION( logtastic::error, function_name, log_message )
+#define FAILURE_LOG( function_name, log_message ) LOGTASTIC_LOG_FUNCTION( logtastic::failure, function_name, log_message )
+
+#define INFO_STREAM( function_name ) logtastic::message( logtastic::info, function_name )
+#define WARN_STREAM( function_name ) logtastic::message( logtastic::warn, function_name )
+#define ERROR_STREAM( function_name ) logtastic::message( logtastic::error, function_name )
+#define FAILURE_STREAM( function_name ) logtastic::message( logtastic::failure, function_name )
+
+#define VARIABLE_LOG( function_name, id, variable, count ) LOGTASTIC_VARIABLE_FUNCTION( id, #variable, function_name, variable, count )
+
+#endif // Defined LOGTASTIC_FUNCTION_NAME
+
+#else // Not defined LOGTASTIC_ALL_LOGGING_DISABLED
 // MACROS DISABLED
-// To optimize away the while(0) statements, compile with -O1 or higher
 
-#define INFO_LOG( log_messege )     do{}while(0)
-#define WARN_LOG( log_messege )     do{}while(0)
-#define ERROR_LOG( log_messege )    do{}while(0)
-#define FAILURE_LOG( log_messege )  do{}while(0)
+#ifdef LOGTASTIC_FUNCTION_NAME
 
-#define INFO_STREAM     if(0) logtastic::messege( logtastic::info, LOGTASTIC_FUNCTION_NAME )
-#define WARN_STREAM     if(0) logtastic::messege( logtastic::warn, LOGTASTIC_FUNCTION_NAME )
-#define ERROR_STREAM    if(0) logtastic::messege( logtastic::error, LOGTASTIC_FUNCTION_NAME )
-#define FAILURE_STREAM  if(0) logtastic::messege( logtastic::failure, LOGTASTIC_FUNCTION_NAME )
+#define INFO_LOG( log_message )     do{}while(0)
+#define WARN_LOG( log_message )     do{}while(0)
+#define ERROR_LOG( log_message )    do{}while(0)
+#define FAILURE_LOG( log_message )  do{}while(0)
+
+#define INFO_STREAM     if(0) logtastic::message( logtastic::info, LOGTASTIC_FUNCTION_NAME )
+#define WARN_STREAM     if(0) logtastic::message( logtastic::warn, LOGTASTIC_FUNCTION_NAME )
+#define ERROR_STREAM    if(0) logtastic::message( logtastic::error, LOGTASTIC_FUNCTION_NAME )
+#define FAILURE_STREAM  if(0) logtastic::message( logtastic::failure, LOGTASTIC_FUNCTION_NAME )
 
 #define VARIABLE_LOG( id, variable, count ) do{}while(0)
 
-#endif
+#else // Not Defined LOGTASTIC_FUNCTION_NAME
+
+#define INFO_LOG( func, log_message )     do{}while(0)
+#define WARN_LOG( func, log_message )     do{}while(0)
+#define ERROR_LOG( func, log_message )    do{}while(0)
+#define FAILURE_LOG( func, log_message )  do{}while(0)
+
+#define INFO_STREAM( function_name )     if(0) logtastic::message( logtastic::info, function_name )
+#define WARN_STREAM( function_name )     if(0) logtastic::message( logtastic::warn, function_name )
+#define ERROR_STREAM( function_name )    if(0) logtastic::message( logtastic::error, function_name )
+#define FAILURE_STREAM( function_name )  if(0) logtastic::message( logtastic::failure, function_name )
+
+#define VARIABLE_LOG( func, id, variable, count ) do{}while(0)
+
+#endif // Defined LOGTASTIC_FUNCTION_NAME
+
+#endif // Defined LOGTASTIC_ALL_LOGGING_DISABLED
 
 ////////////////////////////////////////////////
 
@@ -136,40 +172,45 @@ namespace logtastic
 
   enum log_depth { debug, info, warn, error, failure, off };
 
-  class messege;
+  class message;
   class logger;
 
 
 ////////////////////////////////////////////////
 
 
-  class messege
+  // Stremer type interface
+  class message
   {
     private:
       int _identifier;
       log_depth _depth;
-      std::stringstream _messege;
+      std::stringstream _message;
       const char* _func_name;
 
     public:
-      messege( log_depth, int );
-      messege( log_depth, const char* );
-      messege( const messege& );
-      ~messege();
+      message( log_depth, int );
+      message( log_depth, const char* );
+      message( const message& );
+      ~message();
 
       template < typename T >
-        messege& operator<<( const T& );
+        message& operator<<( const T& );
   };
 
 
 ////////////////////////////////////////////////
 
+  // Internal entry structure
   struct statement
   {
     log_depth depth;
     const char* function;
-    int id;
     std::string text;
+
+    // Is a singly linked list
+    std::mutex mutex;
+    statement* next;
   };
 
 ////////////////////////////////////////////////
@@ -180,7 +221,7 @@ namespace logtastic
     typedef void (*SignalHandler)(int);
 
     private:
-      logger( std::ostream& st = std::cout );// Constructor
+      logger( std::ostream& st );// Constructor
 
       logger( const logger& ) = delete;
       logger& operator=( const logger& ) = delete;
@@ -198,9 +239,6 @@ namespace logtastic
 
       // Thread specific data
       std::thread _loggingThread;
-      MutexedBuffer<statement> _statementQueue;
-//      std::mutex _statementQueueMutex;
-      std::atomic_bool _stopThread;
       size_t _queueSizeWarning;
       unsigned long _maxFileSize;
 
@@ -214,6 +252,7 @@ namespace logtastic
       std::string _baseFilename;
       size_t _numberFiles;
       size_t _currentFileID;
+      unsigned long _currentFileNumber;
       std::vector< std::string > _files;
       std::ofstream _currentFile;
 
@@ -232,13 +271,33 @@ namespace logtastic
 
 
       ////////////////////////////////////////////////////////////////
+      // Mutexed list variables
+
+      // Control the start and end only
+      statement* _start;
+      std::mutex _startMutex;
+      statement* _end;
+      std::mutex _endMutex;
+
+      // Count the number of elements
+      size_t _elementCount;
+      std::mutex _elementCountMutex;
+
+      // Condition variables to wait on
+      std::condition_variable _waitData;
+
+      // Stopping the thread
+      bool _stopThread;
+
+
+      ////////////////////////////////////////////////////////////////
       // Helper functions
       std::string getPrefix( log_depth );
       void outputAll( log_depth, std::string& );
 
 
       ////////////////////////////////////////////////////////////////
-      // Functions that do the actual logging - only accessible through the static functions provided
+      // Functions that write to the file
       logger& Log_Statement( log_depth, const char*, std::string );
 
       template < typename T >
@@ -250,8 +309,14 @@ namespace logtastic
       void writeOutro();
       void flush();
 
+      // Update behaviour
       void nextFile();
       void stopThread();
+
+      // Implement the buffer behaviour
+      size_t getSize();
+      // Push onto front of the buffer
+      void pushStatement( statement* );
 
     public:
 
@@ -267,13 +332,11 @@ namespace logtastic
       friend void push( log_depth, const char*, std::string );
 
       template < unsigned int N, typename T >
-      friend void recordVariable( const char* name, const char* func, T& var, unsigned long int skipNum );
-      template < unsigned int N, typename T >
       friend void pushVariable( const char* name, const char* func, T& var, unsigned long int skipNum );
 
       ////////////////////////////////////////////////////////////////
       // Static functions to initialise/kill the logger
-      friend void init();
+      friend void init( std::ostream& );
       friend void start( const char*, const char* );
       friend void stop();
 
@@ -288,8 +351,8 @@ namespace logtastic
 
       friend void setFlushOnEveryCall( bool );
       friend void setPrintToScreenLimit( log_depth );
-      friend bool setFormat( log_depth, const char* );
-      friend bool setFormatAll( const char * );
+      friend void setFormat( log_depth, const char* );
+      friend void setFormatAll( const char * );
       friend void setVariableLogDepth( log_depth );
 
       friend void setHaltOnSignal( int, bool );
@@ -310,11 +373,9 @@ namespace logtastic
   void push( log_depth, const char*, std::string );
 
   template < unsigned int N, typename T >
-  void recordVariable( const char*, const char*, T&, unsigned long int );
-  template < unsigned int N, typename T >
   void pushVariable( const char*, const char*, T&, unsigned long int );
 
-  void init();
+  void init( std::ostream& os = std::cout );
   void start( const char*, const char* );
   void stop();
 
@@ -327,8 +388,8 @@ namespace logtastic
 
   void setFlushOnEveryCall( bool );
   void setPrintToScreenLimit( log_depth );
-  bool setFormat( log_depth, const char* );
-  bool setFormatAll( const char * );
+  void setFormat( log_depth, const char* );
+  void setFormatAll( const char * );
   void setVariableLogDepth( log_depth );
 
   void setHaltOnSignal( int, bool );
@@ -340,44 +401,21 @@ namespace logtastic
   // Template Definitions
   ////////////////////////////////////////////////////////////////
 
-  // Friend functions
-  template < unsigned int N, typename T >
-  void recordVariable( const char* name, const char* function, T& var, unsigned long int skipNum )
-  {
-    static unsigned long int count = 0;
-    static logger* theLogger = logtastic::logger::get();
-    if ( count == 0 )
-    {
-      std::stringstream ss;
-      ss << "Monitoring variable id number : " << N << " (" << name << ") - Every " << skipNum << " steps with initial value = " << var;
-//        logtastic::log( logger::_variableLogDepth, ss.str().c_str() );
-      LOGTASTIC_LOG_FUNCTION( theLogger->_variableLogDepth, function, ss.str() );
-    }
-
-    if ( count >= skipNum )
-    {
-      theLogger->Log_Variable( theLogger->_variableLogDepth, function, name, var );
-      count = 1;
-    }
-    else
-      ++count;
-  }
-
-
   template < unsigned int N, typename T >
   void pushVariable( const char* name, const char* function, T& var, unsigned long int skipNum )
   {
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lk( mutex );
+
     logger* theLogger = logtastic::logger::get();
     if ( theLogger == nullptr ) return;
 
     static unsigned long int count = 0;
-    static statement st = { theLogger->_variableLogDepth, nullptr, 0, std::string() };
 
     if ( count == 0 )
     {
       std::stringstream ss;
       ss << "Monitoring variable id number : " << N << " (" << name << ") - Every " << skipNum << " steps with initial value = " << var;
-//        logtastic::log( logger::_variableLogDepth, ss.str().c_str() );
       LOGTASTIC_LOG_FUNCTION( theLogger->_variableLogDepth, function, ss.str() );
     }
 
@@ -385,11 +423,14 @@ namespace logtastic
     {
       std::stringstream ss;
       ss << "Variable : " << name << " = " << var;
-      st.function = function;
-      st.text = ss.str();
-      count = 1;
 
-      theLogger->_statementQueue.push( st );
+      statement* st = new statement();
+      st->depth = theLogger->_variableLogDepth;
+      st->function = function;
+      st->text = ss.str();
+
+      count = 1;
+      theLogger->pushStatement( st );
     }
     else
       ++count;
@@ -397,32 +438,14 @@ namespace logtastic
 
 
   ////////////////////////////////////////////////////////////////
-  // Member functions
+  // Message templated stream operator
+
   template < typename T >
-  logger& logger::Log_Variable( log_depth depth, const char* function, const char* varName, T& var )
+  message& message::operator<<( const T& arg )
   {
-    std::stringstream ss;
-    ss << getPrefix( depth ) << "Variable : " << varName << " = " << var << "\n";
-    std::string result = ss.str();
-    outputAll( depth, result );
-
-    if ( _flushOnCall )
-    {
-      this->flush();
-    }
-
+    _message << arg;
     return *this;
   }
-
-
-  ////////////////////////////////////////////////////////////////
-
-  template < typename T >
-    messege& messege::operator<<( const T& arg )
-    {
-      _messege << arg;
-      return *this;
-    }
 
 }
 

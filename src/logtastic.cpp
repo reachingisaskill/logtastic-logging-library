@@ -56,40 +56,40 @@ namespace logtastic
 
 ///////////////////////////////////////////////////////////////
 
-  messege::messege( log_depth depth, int identifier ) :
+  message::message( log_depth depth, int identifier ) :
     _identifier( identifier ),
     _depth( depth ),
-    _messege( "" ),
+    _message( "" ),
     _func_name( nullptr )
   {
   }
   
-  messege::messege( log_depth depth, const char* func ) :
+  message::message( log_depth depth, const char* func ) :
     _identifier( 0 ),
     _depth( depth ),
-    _messege( "" ),
+    _message( "" ),
     _func_name( func )
   {
   }
 
-  messege::messege( const messege& mess ) :
+  message::message( const message& mess ) :
     _identifier( mess._identifier ),
     _depth( mess._depth ),
-    _messege( mess._messege.str() ),
+    _message( mess._message.str() ),
     _func_name( mess._func_name )
   {
   }
 
-  messege::~messege()
+  message::~message()
   {
-    std::string result = _messege.str();
+    std::string result = _message.str();
 
 //    logtastic::log( _depth, _func_name, result );
     LOGTASTIC_LOG_FUNCTION( _depth, _func_name, result );
   }
 
   template <>
-  messege& messege::operator<<( const log_depth& depth )
+  message& message::operator<<( const log_depth& depth )
   {
     _depth = depth;
     return *this;
@@ -105,9 +105,6 @@ namespace logtastic
   logger::logger( std::ostream& stream ) :
     _isRunning( false ),
     _loggingThread(),
-    _statementQueue(),
-//    _statementQueueMutex(),
-    _stopThread( false ),
     _queueSizeWarning( 10000 ),
     _maxFileSize( 100000 ),
 
@@ -118,6 +115,7 @@ namespace logtastic
     _baseFilename( "logtastic.log" ),
     _numberFiles( 1 ),
     _currentFileID( 0 ),
+    _currentFileNumber( 0 ),
     _files(),
     _currentFile(),
 
@@ -128,7 +126,12 @@ namespace logtastic
     _flushOnCall( true ),
     _screenDepth( logtastic::warn ),
     _variableLogDepth( logtastic::info ),
-    _haltOnSignal()
+    _haltOnSignal(),
+
+    _start( nullptr ),
+    _end( nullptr ),
+    _elementCount( 0 ),
+    _stopThread( false )
   {
     for ( unsigned int i = 0; i < LOGTASTIC_NUMBER_SIGNALS; ++i )
     {
@@ -230,7 +233,7 @@ namespace logtastic
       _files.push_back( file_path.str() );
     }
 
-    _currentFile = std::ofstream( _files[_currentFileID++].c_str() );
+    _currentFile = std::ofstream( _files[_currentFileID++].c_str(), std::ios_base::out );
     if ( ! _currentFile.is_open() )
     {
       std::cerr << "Could Not Open File (" << _files[0] << ") For Writing" << std::endl;
@@ -247,27 +250,6 @@ namespace logtastic
   {
     if ( _currentFile.is_open() )
       _currentFile.close();
-  }
-
-
-  void logger::stopThread()
-  {
-    // Close the buffer thread
-    _stopThread = true;
-    _statementQueue.setFlag( true );
-    _loggingThread.join();
-  }
-
-
-  void logger::nextFile()
-  {
-    // Close current
-    _currentFile.close();
-    // Open the next
-    _currentFile = std::ofstream( _files[ _currentFileID++ ] );
-    // Update the counter
-    if ( _currentFileID == _numberFiles )
-      _currentFileID = 0;
   }
 
 
@@ -288,8 +270,9 @@ namespace logtastic
     outputStr << "Number Log Files     : " << _numberFiles << '\n';
     outputStr << "Logging Initialised  : " << std::put_time( &tm, "%c %Z" ) << "\n\n";
 
-    outputStr << "Current File         : " << _currentFileID << '\n';
-    outputStr << "File Opened          : " << std::put_time( &file_tm, "%c %Z" ) << "\n\n";
+    outputStr << "Current File ID      : " << _currentFileID-1 << '\n';
+    outputStr << "File Opened          : " << std::put_time( &file_tm, "%c %Z" ) << '\n';
+    outputStr << "Log File Number      : " << _currentFileNumber << "\n\n";
 
     std::string result = outputStr.str();
     this->outputAll( logtastic::info, result );
@@ -318,6 +301,7 @@ namespace logtastic
     std::tm tm = *std::localtime(&stop_time);
 
     std::stringstream outputStr;
+    outputStr << "\nEND OF FILE\n";
     outputStr << "\nEND OF PROGRAM OPERATION\n";
     outputStr << "Program finished at: " << std::put_time( &tm, "%c %Z" ) << "\n\n";
 
@@ -325,6 +309,104 @@ namespace logtastic
     this->outputAll( logtastic::info, result );
     this->flush();
   }
+
+  void logger::nextFile()
+  {
+    if ( _currentFileID == _numberFiles )
+      _currentFileID = 0;
+
+    // Close current
+    _currentFile.close();
+    // Open the next
+    _currentFile = std::ofstream( _files[ _currentFileID ], std::ios_base::out );
+
+    if ( ! _currentFile.is_open() )
+    {
+      std::cerr << "Could Not Open File " << _currentFileID << " (" << _files[_currentFileID] << ") For Writing" << std::endl;
+    } 
+    
+    // Update the counter
+    ++_currentFileID;
+    ++_currentFileNumber;
+  }
+
+  void logger::stopThread()
+  {
+    // Close the buffer thread
+    {
+      std::lock_guard<std::mutex> lk( _elementCountMutex );
+      _stopThread = true;
+    }
+    // Signal that we changed something
+    _waitData.notify_all();
+    // Join the logging thread
+    _loggingThread.join();
+  }
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+  //  Buffer implementation
+
+  size_t logger::getSize()
+  {
+    std::lock_guard<std::mutex> lock( _elementCountMutex );
+    return _elementCount;
+  }
+
+  void logger::pushStatement( statement* element )
+  {
+    std::unique_lock<std::mutex> startLock( _startMutex, std::defer_lock );
+    std::unique_lock<std::mutex> endLock( _endMutex, std::defer_lock );
+    std::unique_lock<std::mutex> countLock( _elementCountMutex, std::defer_lock );
+
+    // Lock the start of the buffer
+    while ( ! startLock.try_lock() );
+    // Lock the counter to check the status
+    while ( ! countLock.try_lock() );
+
+    switch ( _elementCount )
+    {
+      case 0 :
+        {
+          while( ! endLock.try_lock() );
+          _start = element;
+          _end = element;
+          ++_elementCount;
+          countLock.unlock();
+          endLock.unlock();
+        }
+        break;
+      case 1 : // If there's only one element - block the pop
+        {
+          while( ! endLock.try_lock() );
+          ++_elementCount;
+          countLock.unlock();
+
+          // Update the start/end pointer and release the end lock - no longer critical
+          _start->next = element;
+          endLock.unlock();
+
+          // set the start element
+          _start = element;
+        }
+        break;
+      default :
+        {
+          ++_elementCount;
+          // Update the start/end pointer and release the end lock - no longer critical
+          _start->next = element;
+          countLock.unlock();
+
+          // set the start element
+          _start = element;
+        }
+        break;
+    }
+    // Notify anyone waiting that an element was pushed.
+    _waitData.notify_all();
+    startLock.unlock();
+  }
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
   //  Friend Functions 
@@ -342,20 +424,20 @@ namespace logtastic
   {
     logger* theLogger = logger::get();
     if ( theLogger == nullptr ) return;
-    statement st;
-    st.depth = depth;
-    st.function = function;
-    st.text = text;
+    statement* st = new statement();
+    st->depth = depth;
+    st->function = function;
+    st->text = text;
 
-    theLogger->_statementQueue.push( st );
+    theLogger->pushStatement( st );
   }
 
 
-  void init()
+  void init( std::ostream& os )
   {
     if ( logger::_theInstance == nullptr )
     {
-      logger::_theInstance = new logger();
+      logger::_theInstance = new logger( os );
     }
   }
 
@@ -363,7 +445,8 @@ namespace logtastic
   {
     if ( logger::_theInstance == nullptr )
     {
-      logger::_theInstance = new logger();
+      std::cerr << "Unable to start an uninitialised logger." << std::endl;
+      std::abort();
     }
 
     if ( ! logger::_theInstance->_isRunning )
@@ -372,7 +455,7 @@ namespace logtastic
     }
     else
     {
-      WARN_LOG( "Trying to start logging while it is already running." );
+      push( warn, "logtastic::start", "Trying to start logging while it is already running." );
     }
   }
 
@@ -394,7 +477,7 @@ namespace logtastic
     if ( logger::_theInstance->_isRunning == false )
       logger::_theInstance->_baseFilename = std::string( fileName );
     else
-      ERROR_LOG( "Attempted to add another output file after logger initialisation" );
+      push( error, "logtastic::setLogFile", "Attempted to add another output file after logger initialisation" );
   }
 
   void setLogFileDirectory( const char* directoryName )
@@ -402,7 +485,7 @@ namespace logtastic
     if ( logger::_theInstance->_isRunning == false )
       logger::_theInstance->_logDirectory = directoryName;
     else
-      ERROR_LOG( "Attempted to change the Log File Directory after initialisation" );
+      push( error, "logtastic::setLogFileDirectory", "Attempted to change the Log File Directory after initialisation" );
   }
 
   void setQueueSizeWarning( size_t limit )
@@ -410,7 +493,7 @@ namespace logtastic
     if ( logger::_theInstance->_isRunning == false )
       logger::_theInstance->_queueSizeWarning = limit;
     else
-      ERROR_LOG( "Attempted to change the queue size limit after initialisation" );
+      push( error, "logtastic::setQueueSizeWarning", "Attempted to change the queue size limit after initialisation" );
   }
 
   void setMaxFileSize( unsigned long size )
@@ -418,7 +501,7 @@ namespace logtastic
     if ( logger::_theInstance->_isRunning == false )
       logger::_theInstance->_maxFileSize = size;
     else
-      ERROR_LOG( "Attempted to change the max file size after initialisation" );
+      push( error, "logtastic::setMaxFileSize", "Attempted to change the max file size after initialisation" );
   }
 
   void setMaxNumberFiles( unsigned long size )
@@ -426,7 +509,7 @@ namespace logtastic
     if ( logger::_theInstance->_isRunning == false )
       logger::_theInstance->_numberFiles = size;
     else
-      ERROR_LOG( "Attempted to change the max file size after initialisation" );
+      push( error, "logtastic::setMaxNumberFiles", "Attempted to change the max file size after initialisation" );
   }
 
   void setFlushOnEveryCall( bool flush )
@@ -439,19 +522,19 @@ namespace logtastic
     if ( logger::_theInstance->_isRunning == false )
       logger::_theInstance->_screenDepth = depth;
     else
-      ERROR_LOG( "Attempted to change logging setting (Print to terminal depth) after logger initialisation" );
+      push( error, "logtastic::setPrintToScreenLimit", "Attempted to change logging setting (Print to terminal depth) after logger initialisation" );
   }
 
-  bool setFormat( log_depth, const char* )
+  void setFormat( log_depth, const char* )
   {
-    std::cout << "FUNCTION NOT YET IMPLEMENTED!" << std::endl;
-    return false;
+    std::cerr << "logtastic::setFormat : FUNCTION NOT YET IMPLEMENTED!" << std::endl;
+    std::abort();
   }
 
-  bool setFormatAll( const char * )
+  void setFormatAll( const char * )
   {
-    std::cout << "FUNCTION NOT YET IMPLEMENTED!" << std::endl;
-    return false;
+    std::cerr << "logtastic::setFormatAll : FUNCTION NOT YET IMPLEMENTED!" << std::endl;
+    std::abort();
   }
 
   void setVariableLogDepth( log_depth depth )
@@ -459,7 +542,7 @@ namespace logtastic
     if ( logger::_theInstance->_isRunning == false )
       logger::_theInstance->_variableLogDepth = depth;
     else
-      ERROR_LOG( "Attempted to change logging setting (Variable log depth) after logger initialisation" );
+      push( error, "logtastic::setVariableLogDepth", "Attempted to change logging setting (Variable log depth) after logger initialisation" );
   }
 
 
@@ -470,7 +553,7 @@ namespace logtastic
     if ( logger::_theInstance->_isRunning == false )
       logger::_theInstance->_haltOnSignal[LOGTASTIC_SIGNAL_ID( signal )] = value;
     else
-      ERROR_LOG( "Attempted to change signal handling behaviour after logger initialisation" );
+      push( error, "logtastic::setHaltOnSignal", "Attempted to change signal handling behaviour after logger initialisation" );
   }
 
   void registerSignalHandler( int signal, void (*hndl)(int) )
@@ -478,7 +561,7 @@ namespace logtastic
     if ( logger::_theInstance->_isRunning == false )
       logger::_theInstance->_userSignalHandlers[LOGTASTIC_SIGNAL_ID( signal)] = hndl;
     else
-      ERROR_LOG( "Attempted to set signal handler after logger initialisation" );
+      push( error, "logtastic::registerSignalHandler", "Attempted to set signal handler after logger initialisation" );
   }
 
   void logtastic_signal_handler( int sig )
@@ -491,28 +574,28 @@ namespace logtastic
     switch( sig )
     {
       case SIGABRT :
-        FAILURE_LOG( "Abort Signal Received." );
+        push( failure, "logtastic::signal_handler", "Abort Signal Received." );
         if ( handler != nullptr ) handler( sig );
         stop();
         std::exit( sig );
         break;
 
       case SIGFPE  :
-        FAILURE_LOG( "Floating Point Exception Received." );
+        push( failure, "logtastic::signal_handler", "Floating Point Exception Received." );
         if ( handler != nullptr ) handler( sig );
         stop();
         std::exit( sig );
         break;
 
       case SIGILL  :
-        FAILURE_LOG( "Illegal Instruction Signal Received." );
+        push( failure, "logtastic::signal_handler", "Illegal Instruction Signal Received." );
         if ( handler != nullptr ) handler( sig );
         stop();
         std::exit( sig );
         break;
 
       case SIGSEGV :
-        FAILURE_LOG( "Segmentation Violoation Signal Received." );
+        push( failure, "logtastic::signal_handler", "Segmentation Violoation Signal Received." );
         if ( handler != nullptr ) handler( sig );
         stop();
         std::exit( sig );
@@ -521,14 +604,14 @@ namespace logtastic
       case SIGINT  :
         if ( kill ) 
         {
-          FAILURE_LOG( "Interrupt Signal Received. Halting." );
+          push( failure, "logtastic::signal_handler", "Interrupt Signal Received. Halting." );
           if ( handler != nullptr ) handler( sig );
           stop();
           std::exit( sig );
         }
         else
         {
-          ERROR_LOG( "Interrupt Signal Received." );
+          push( error, "logtastic::signal_handler", "Interrupt Signal Received." );
           if ( handler != nullptr ) handler( sig );
         }
         break;
@@ -536,58 +619,58 @@ namespace logtastic
       case SIGTERM :
         if ( kill ) 
         {
-          FAILURE_LOG( "Termination Signal Received. Halting." );
+          push( failure, "logtastic::signal_handler", "Termination Signal Received. Halting." );
           if ( handler != nullptr ) handler( sig );
           stop();
           std::exit( sig );
         }
         else
         {
-          ERROR_LOG( "Termination Signal Received." );
+          push( error, "logtastic::signal_handler", "Termination Signal Received." );
           if ( handler != nullptr ) handler( sig );
         }
         break;
 
 #ifdef __linux__
       case SIGTSTP :
-        INFO_LOG( "Stopping program execution." );
+        push( info, "logtastic::signal_handler", "Stopping program execution." );
         if ( handler != nullptr ) handler( sig );
         if ( kill ) std::raise( SIGSTOP );
         break;
 
       case SIGCONT :
-        INFO_LOG( "Resuming program execution." );
+        push( info, "logtastic::signal_handler", "Resuming program execution." );
         if ( handler != nullptr ) handler( sig );
         break;
 
       case SIGALRM :
-        WARN_STREAM << "Alarm Signal Received: " << sig;
+        message( warn, "logtastic::signal_handler" ) << "Alarm Signal Received: " << sig;
         if ( handler != nullptr ) handler( sig );
         if ( kill )
         {
-          FAILURE_LOG( "Forcing program exit on signal." );
+          push( failure, "logtastic::signal_handler", "Forcing program exit on signal." );
           stop();
           std::exit( sig );
         }
         break;
 
       case SIGVTALRM :
-        WARN_STREAM << "Virtual Alarm Signal Received: " << sig;
+        message( warn, "logtastic::signal_handler" ) << "Virtual Alarm Signal Received: " << sig;
         if ( handler != nullptr ) handler( sig );
         if ( kill )
         {
-          FAILURE_LOG( "Forcing program exit on signal." );
+          push( failure, "logtastic::signal_handler", "Forcing program exit on signal." );
           stop();
           std::exit( sig );
         }
         break;
 
       case SIGPROF :
-        WARN_STREAM << "Profiling Timer Expiration Signal Received: " << sig;
+        message( warn, "logtastic::signal_handler" ) << "Profiling Timer Expiration Signal Received: " << sig;
         if ( handler != nullptr ) handler( sig );
         if ( kill )
         {
-          FAILURE_LOG( "Forcing program exit on signal." );
+          push( failure, "logtastic::signal_handler", "Forcing program exit on signal." );
           stop();
           std::exit( sig );
         }
@@ -596,127 +679,127 @@ namespace logtastic
       case SIGHUP :
         if ( kill ) 
         {
-          FAILURE_LOG( "Hang Up Signal Received. Halting." );
+          push( failure, "logtastic::signal_handler", "Hang Up Signal Received. Halting." );
           if ( handler != nullptr ) handler( sig );
           stop();
           std::exit( sig );
         }
         else
         {
-          ERROR_LOG( "Hang Up Signal Received." );
+          push( error, "logtastic::signal_handler", "Hang Up Signal Received." );
           if ( handler != nullptr ) handler( sig );
         }
         break;
 
       case SIGQUIT :
-        FAILURE_LOG( "Quit Signal Received." );
+        push( failure, "logtastic::signal_handler", "Quit Signal Received." );
         if ( handler != nullptr ) handler( sig );
         stop();
         std::exit( sig );
         break;
 
       case SIGBUS :
-        FAILURE_LOG( "Bus Error Signal Received." );
+        push( failure, "logtastic::signal_handler", "Bus Error Signal Received." );
         if ( handler != nullptr ) handler( sig );
         stop();
         std::exit( sig );
         break;
 
       case SIGXCPU :
-        FAILURE_LOG( "CPU Time Exceeded Signal Received." );
+        push( failure, "logtastic::signal_handler", "CPU Time Exceeded Signal Received." );
         if ( handler != nullptr ) handler( sig );
         stop();
         std::exit( sig );
         break;
 
       case SIGXFSZ :
-        FAILURE_LOG( "File Size Exceeded Signal Received." );
+        push( failure, "logtastic::signal_handler", "File Size Exceeded Signal Received." );
         if ( handler != nullptr ) handler( sig );
         stop();
         std::exit( sig );
         break;
 
       case SIGUSR1 :
-        INFO_LOG( "User Signal 1 Received." );
+        push( info, "logtastic::signal_handler", "User Signal 1 Received." );
         if ( handler != nullptr ) handler( sig );
         if ( kill )
         {
-          FAILURE_LOG( "Forcing program exit on signal." );
+          push( failure, "logtastic::signal_handler", "Forcing program exit on signal." );
           stop();
           std::exit( sig );
         }
         break;
 
       case SIGUSR2 :
-        INFO_LOG( "User Signal 2 Received." );
+        push( info, "logtastic::signal_handler", "User Signal 2 Received." );
         if ( handler != nullptr ) handler( sig );
         if ( kill )
         {
-          FAILURE_LOG( "Forcing program exit on signal." );
+          push( failure, "logtastic::signal_handler", "Forcing program exit on signal." );
           stop();
           std::exit( sig );
         }
         break;
 
       case SIGPIPE :
-        INFO_LOG( "Broken Pipe Signal Received." );
+        push( info, "logtastic::signal_handler", "Broken Pipe Signal Received." );
         if ( handler != nullptr ) handler( sig );
         if ( kill )
         {
-          FAILURE_LOG( "Forcing program exit on signal." );
+          push( failure, "logtastic::signal_handler", "Forcing program exit on signal." );
           stop();
           std::exit( sig );
         }
         break;
 
       case SIGCHLD :
-        INFO_LOG( "Child Process Termination Signal Received." );
+        push( info, "logtastic::signal_handler", "Child Process Termination Signal Received." );
         if ( handler != nullptr ) handler( sig );
         if ( kill )
         {
-          FAILURE_LOG( "Forcing program exit on signal." );
+          push( failure, "logtastic::signal_handler", "Forcing program exit on signal." );
           stop();
           std::exit( sig );
         }
         break;
 
       case SIGTTIN :
-        INFO_LOG( "Terminal Input For Background Process Signal Received." );
+        push( info, "logtastic::signal_handler", "Terminal Input For Background Process Signal Received." );
         if ( handler != nullptr ) handler( sig );
         if ( kill )
         {
-          WARN_LOG( "Stopping program." );
+          push( warn, "logtastic::signal_handler", "Stopping program." );
           std::raise( SIGSTOP );
         }
         break;
 
       case SIGTTOU :
-        INFO_LOG( "Terminal Output For Background Process Signal Received." );
+        push( info, "logtastic::signal_handler", "Terminal Output For Background Process Signal Received." );
         if ( handler != nullptr ) handler( sig );
         if ( kill )
         {
-          FAILURE_LOG( "Forcing program exit on signal." );
+          push( failure, "logtastic::signal_handler", "Forcing program exit on signal." );
           std::raise( SIGSTOP );
         }
         break;
 
       case SIGTRAP :
-        INFO_LOG( "Break point reached." );
+        push( info, "logtastic::signal_handler", "Break point reached." );
         if ( handler != nullptr ) handler( sig );
         if ( kill )
         {
-          FAILURE_LOG( "Forcing program exit on signal." );
+          push( failure, "logtastic::signal_handler", "Forcing program exit on signal." );
           stop();
           std::exit( sig );
         }
         break;
 
       case SIGWINCH : // Window resize
+        push( info, "logtastic::signal_handler", "Window Resize Signal Received." );
         if ( handler != nullptr ) handler( sig );
         if ( kill )
         {
-          INFO_LOG( "Window Resize Signal Received." );
-          FAILURE_LOG( "Forcing program exit on signal." );
+          push( failure, "logtastic::signal_handler", "Forcing program exit on signal." );
           stop();
           std::exit( sig );
         }
@@ -728,7 +811,7 @@ namespace logtastic
 #endif
 
       default:
-        FAILURE_STREAM << "Unexpected and Unknown Signal " << sig << " Received. Halting process.";
+        message( failure, "logtastic::signal_handler" ) << "Unexpected and Unknown Signal " << sig << " Received. Halting process.";
         stop();
         std::exit( sig );
         break;
@@ -764,10 +847,6 @@ namespace logtastic
         break;
     }
     ss << "- ";
-    // USE INSTRUCTIONS HERE!
-
-//    std::chrono::duration<double> timediff = std::chrono::steady_clock::now() - _startClock;
-//    ss << std::fixed << std::setw( 11 ) << std::setfill('0') << std::setprecision( 4 ) << timediff.count();
     std::chrono::milliseconds timediff = std::chrono::duration_cast<std::chrono::milliseconds>( std::chrono::steady_clock::now() - _startClock );
     ss << std::setw( 11 ) << std::setfill('0') << timediff.count() << "] ";
     return ss.str();
@@ -813,131 +892,101 @@ namespace logtastic
 
   void logging_thread_function()
   {
-    static logger* theLogger = logger::get();
-    MutexedBuffer<statement>& buffer = theLogger->_statementQueue;
-    statement current_statement;
-    size_t number = 0;
+    logger* theLogger = logger::get();
+    statement* current_statement;
     size_t warning_limit = theLogger->_queueSizeWarning;
     size_t throttling_limit = 0.8*theLogger->_queueSizeWarning;
     unsigned int max_file_size = theLogger->_maxFileSize;
     unsigned int numberEntries = 0;
 
+    std::unique_lock<std::mutex> counterLock( theLogger->_elementCountMutex, std::defer_lock );
+    std::unique_lock<std::mutex> endLock( theLogger->_endMutex, std::defer_lock );
+
     theLogger->writeIntro();
 
-    while ( buffer.waitPop( current_statement ) )
+    while ( true )
     {
-      theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
-      ++numberEntries;
+      // Grab the counter
+      counterLock.lock();
 
-//      if ( number > warning_limit )
-//      {
-//        lock.lock(); // Block the submitting threads - reduce queue size to more sensible level
-//
-//        std::stringstream ss;
-//        ss << "Logging buffer size: " << number << ", exceeding limits, throttling to 80%";
-//        theLogger->Log_Statement( warn, "logging_thread_function", ss.str() );
-//
-//        while ( number > throttling_limit )
-//        {
-//          current_statement = theLogger->_statementQueue.front();
-//          theLogger->_statementQueue.pop();
-//
-//          theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
-//          ++numberEntries;
-//          --number;
-//        }
-//        lock.unlock();
-//      }
-
-      if ( numberEntries > max_file_size )
+      if ( theLogger->_elementCount == 0 )
       {
-        theLogger->writeFileOutro();
-        theLogger->nextFile();
-        theLogger->writeIntro();
+        theLogger->_waitData.wait( counterLock, [&]()->bool{ return (theLogger->_elementCount > 0) || theLogger->_stopThread; } );
 
-        numberEntries = 0;
+        if ( (theLogger->_elementCount == 0) && theLogger->_stopThread )
+        {
+          counterLock.unlock();
+          break;
+        }
       }
-    }
 
-    // Empty what's left
-    while ( buffer.pop( current_statement ) )
-    {
-      theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
+      if ( theLogger->_elementCount > warning_limit )
+      {
+        std::stringstream ss;
+        ss << "Logging buffer size: " << theLogger->_elementCount << ", exceeding limits, throttling to 80%";
+        theLogger->Log_Statement( warn, "logging_thread_function", ss.str() );
+
+        endLock.lock();
+        while ( theLogger->_elementCount > throttling_limit )
+        {
+          // Decrement counter
+          --theLogger->_elementCount;
+          // Grab the element
+          current_statement = theLogger->_end;
+          // update the end pointer
+          theLogger->_end = theLogger->_end->next;
+          // write it
+          theLogger->Log_Statement( current_statement->depth, current_statement->function, current_statement->text );
+          ++numberEntries;
+          // Delete the object
+          delete current_statement;
+
+          if ( numberEntries > max_file_size )
+          {
+            theLogger->writeFileOutro();
+            theLogger->nextFile();
+            theLogger->writeIntro();
+
+            numberEntries = 0;
+          }
+        }
+        counterLock.unlock();
+        endLock.unlock();
+      }
+      else
+      {
+        // Aquire the end pointer - no one else can pop
+        endLock.lock();
+        // Update and release the counter
+        --theLogger->_elementCount;
+        counterLock.unlock();
+
+        // Grab the element
+        current_statement = theLogger->_end;
+        // update the end pointer
+        theLogger->_end = theLogger->_end->next;
+        // Release the end pointer
+        endLock.unlock();
+
+        // write it
+        theLogger->Log_Statement( current_statement->depth, current_statement->function, current_statement->text );
+        ++numberEntries;
+        // Delete the object
+        delete current_statement;
+
+        if ( numberEntries > max_file_size )
+        {
+          theLogger->writeFileOutro();
+          theLogger->nextFile();
+          theLogger->writeIntro();
+
+          numberEntries = 0;
+        }
+      }
     }
 
     theLogger->writeOutro();
   }
 
 } // logtastic
-
-
-//  void logging_thread_function()
-//  {
-//    static logger* theLogger = logger::get();
-//    std::unique_lock< std::mutex > lock( theLogger->_statementQueueMutex, std::defer_lock );
-//    statement current_statement;
-//    size_t number = 0;
-//    size_t warning_limit = theLogger->_queueSizeWarning;
-//    size_t throttling_limit = 0.8*theLogger->_queueSizeWarning;
-//    unsigned int max_file_size = theLogger->_maxFileSize;
-//    unsigned int numberEntries = 0;
-//
-//    lock.lock();
-//    number = theLogger->_statementQueue.size();
-//    lock.unlock();
-//
-////    while ( (! logger::_theInstance->_stopThread) ||  notify_check() )
-//    do
-//    {
-//      if ( number > warning_limit )
-//      {
-//        lock.lock(); // Block the submitting threads - reduce queue size to more sensible level
-//
-//        std::stringstream ss;
-//        ss << "Logging buffer size: " << number << ", exceeding limits, throttling to 80%";
-//        theLogger->Log_Statement( warn, "logging_thread_function", ss.str() );
-//
-//        while ( number > throttling_limit )
-//        {
-//          current_statement = theLogger->_statementQueue.front();
-//          theLogger->_statementQueue.pop();
-//
-//          theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
-//          ++numberEntries;
-//          --number;
-//        }
-//        lock.unlock();
-//      }
-//      else if ( number > 0 )
-//      {
-//        lock.lock();
-//        current_statement = theLogger->_statementQueue.front();
-//        theLogger->_statementQueue.pop();
-//        lock.unlock();
-//
-//        theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
-//        ++numberEntries;
-//      }
-//      else
-//      {
-//        std::this_thread::sleep_for( std::chrono::milliseconds( 5 ) );
-//      }
-//
-//      lock.lock();
-//      number = theLogger->_statementQueue.size();
-//      lock.unlock();
-//    }
-//    while ( (! logger::_theInstance->_stopThread) || ( number > 0 ) );
-//
-//    // Empty what's left
-//    lock.lock();
-//    while ( ! theLogger->_statementQueue.empty() )
-//    {
-//      current_statement = theLogger->_statementQueue.front();
-//      theLogger->_statementQueue.pop();
-//
-//      theLogger->Log_Statement( current_statement.depth, current_statement.function, current_statement.text );
-//    }
-//    lock.unlock();
-//  }
 

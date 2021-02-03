@@ -7,10 +7,26 @@
 int main ( int, char** )
 {
 
-  ERROR_LOG( "TEST!" );
+  ERROR_LOG( "main", "TEST!" );
 
-  ERROR_STREAM << "some bullcrap here...";
+  ERROR_STREAM( "main" ) << "some bullcrap here...";
 
-  std::cout << "\nHello World!\n" << std::endl;
+  logtastic::init();
+  logtastic::setLogFileDirectory( "./dat" );
+  logtastic::setPrintToScreenLimit( logtastic::warn );
+  logtastic::setLogFile("test2.log");
+  logtastic::setMaxFileSize( 1000 );
+  logtastic::setMaxNumberFiles( 2 );
+
+  logtastic::start("Logtastic Tests", "1.0");
+
+  for ( size_t i = 0 ; i < 10000; ++i )
+  {
+    INFO_LOG( "test", "Hello" );
+    VARIABLE_LOG( "yo", 0, i, 100 );
+  }
+
+
+  logtastic::stop();
   return 0;
 }

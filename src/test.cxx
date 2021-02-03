@@ -1,6 +1,7 @@
 //#define __COUNTER__ 5
 #include <iostream>
 
+#define LOGTASTIC_FUNCTION_NAME __func__
 #include "logtastic.h"
 
 
@@ -17,6 +18,7 @@ int main ( int, char** )
 
   logtastic::registerSignalHandler( SIGINT, test );
   logtastic::setHaltOnSignal( SIGINT, true );
+  logtastic::setFlushOnEveryCall( true );
 
   logtastic::setLogFile("test.log");
 
