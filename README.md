@@ -8,7 +8,10 @@ I implemented this during the first year of my PhD in experimental particle phys
 
 I only recently added the library to git hub (a requirement for modern job hunting...) and quickly created a multithreaded branch, which runs a mutex-controlled logging buffer and a separate logging thread. The biggest time sink is writing to the console or file, hence this was moved to a separate thread. It includes functionality to limit the number of calls to the thread if the queue gets to large which is configurable at runtime. I've found it can be used in a real time application (60fps game engine) and still 10s-100s of statements per frame without trouble. 
 
-## Basic design
+Most recent additions include 1) added signal handlers so it records the signals and optionally calls a user specified function as well, and 2) a mutex controlled queue.
+The queue has separate front, back and counter mutexes so that the front and back can be handled separately and the counter mutex can control overall access to throttle the calling thread (don't want a segault because accidentally generated 10^47 error messages...). The calling threads also do no block if there is a data race, rather they repeatedly keep trying until they get through. This turns out to be faster, but may slightly change the order of log statements in rare cases.
+
+## Basic usage
 
  * It uses a series of hash defines to implement the logging functions, which call functions from a
 singleton logging class.
@@ -18,6 +21,14 @@ singleton logging class.
  * Both function call-type interface and a iostream interface is provided. e.g.:
 	- ERROR_LOG( *log-message* );
 	- ERROR_STREAM << *message one* << *some other data* << *more text* ;
+
+ * The macro LOGTASTIC_FUNCTION_NAME determines where logtastic will generate a function name for you, for every invocation. If you define it before the header file is included logtastic will use your defined string/macro to determine the calling function.
+   If it is not defined before the header file is included, you must specify a function name for every invocation. e.g.
+   - With "LOGTASTIC_FUNCTION_NAME __fun__" :
+     ERROR_LOG( "An error occured" );
+   - Without any definition :
+     ERROR_LOG( "test_function", "An error occured" );
+     WARN_STREAM( "initialisation" ) << "Initialisation error :" << errno;
 
  * A variable tracking function is provided to uniquely track simple variables within as the
    program progresses. A unique identifier must be provided to identify the variable in question.
@@ -38,10 +49,4 @@ at it in details but it stills works perfectly!
  
  * Finer controls for the signal handling functionality. It was added quite quickly to meet a need
    but it could be generalised to a more flexible interface.
-   
- * Implement a multithreaded buffer, rather than a std::queue with a mutex. At the moment the whole queue is mutex locked in order to add a statement to the queue. This generally seems fine, however I'd rather lock the front and the back of the queue independently. This would allow periods of high logging calls to happen without being accidentally blocked. I expect this to only make a difference to game engines running at their limit - when FPS is crucial.
-
-
-
-
 
