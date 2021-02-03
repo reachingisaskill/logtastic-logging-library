@@ -13,32 +13,39 @@ The queue has separate front, back and counter mutexes so that the front and bac
 
 ## Basic usage
 
- * It uses a series of hash defines to implement the logging functions, which call functions from a
-singleton logging class.
- * Compile-time definitions can disable the logging statements to test for stability and speed.
-   "LOGTASTIC_ALL_LOGGING_DISABLED" disables all logging statements by turning them into `do{}while( false )` statements, which are optimized away when the GCC optmisation options are used.
- * A separate flag "LOGTASTIC_DEBUG_OFF\" disables only the debugging statements for a release version.
- * Both function call-type interface and a iostream interface is provided. e.g.:
-	- ERROR_LOG( *log-message* );
-	- ERROR_STREAM << *message one* << *some other data* << *more text* ;
+It uses a series of hash defines to implement the logging functions, which call functions from a singleton logging class.
 
- * The macro LOGTASTIC_FUNCTION_NAME determines where logtastic will generate a function name for you, for every invocation. If you define it before the header file is included logtastic will use your defined string/macro to determine the calling function.
+Compile-time definitions can disable the logging statements to test for stability and speed.
+
+ * `LOGTASTIC\_ALL\_LOGGING\_DISABLED` disables all logging statements by turning them into `do{}while( false )` statements, which are optimized away when the GCC optmisation options are used.
+
+ * `LOGTASTIC\_DEBUG\_OFF` disables only the debugging statements for a release version.
+
+   `ERROR\_LOG( *log-message* );` Log single string type interface
+
+   `ERROR\_STREAM << *message one* << *some other data* << *more text*;` Log a string stream interface
+
+
+ * The macro `LOGTASTIC\_FUNCTION\_NAME` determines where logtastic will generate a function name for you, for every invocation. If you define it before the header file is included logtastic will use your defined string/macro to determine the calling function.
    If it is not defined before the header file is included, you must specify a function name for every invocation. e.g.
-   - With "LOGTASTIC_FUNCTION_NAME __fun__" :
-     ERROR_LOG( "An error occured" );
+
+   - With `LOGTASTIC\_FUNCTION\_NAME \_\_fun\_\_` :
+     `ERROR\_LOG( "An error occured" );`
+
    - Without any definition :
-     ERROR_LOG( "test_function", "An error occured" );
-     WARN_STREAM( "initialisation" ) << "Initialisation error :" << errno;
+     `ERROR\_LOG( "test\_function", "An error occured" );`
+     `WARN\_STREAM( "initialisation" ) << "Initialisation error :" << errno;`
 
- * A variable tracking function is provided to uniquely track simple variables within as the
-   program progresses. A unique identifier must be provided to identify the variable in question.
-   The user must also supply a "count" option with only logs the variable every <count> times the
-   statement is encounted in execution (useful for lots of looping!) e.g.:
-	- VARIABLE_LOG( *id*, *variable*, *count* );
 
- * Signal handling was the last piece added into the system and must be enabled at runtime by
-   provding a function pointer for a signal handler, e.g.:
-	- logtastic::registerSignalHandler( void (\*signal_handler)( int ) );
+A variable tracking function is provided to uniquely track simple variables within as the program progresses. A unique identifier must be provided to identify the variable in question.
+The user must also supply a "count" option with only logs the variable every <count> times the statement is encounted in execution (useful for lots of looping!) e.g.:
+
+ * `VARIABLE\_LOG( *id*, *variable*, *count* );` (If LOGTASTIC\_FUNCTION\_NAME is defined)
+
+ * `VARIABLE\_LOG( *func\_name*, *id*, *variable*, *count* );`
+
+Signal handling was the last piece added into the system and must be enabled at runtime by provding a function pointer for a signal handler, e.g.:
+ * `logtastic::registerSignalHandler( void (\*signal\_handler)( int ) );`
 	
 Had a lot of development when I wrote the FES simulations. Around 2015. Been a while since I've looked
 at it in details but it stills works perfectly!
