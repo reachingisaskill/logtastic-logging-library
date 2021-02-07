@@ -18,7 +18,7 @@ int main ( int, char** )
 
   logtastic::registerSignalHandler( SIGINT, test );
   logtastic::setHaltOnSignal( SIGINT, true );
-  logtastic::setFlushOnEveryCall( true );
+  logtastic::setEnableSignalHandling( true );
 
   logtastic::setLogFile("test.log");
 

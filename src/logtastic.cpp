@@ -122,7 +122,7 @@ namespace logtastic
     _startTime(),
     _startClock(),
 
-    _enableSignalHandling( true ),
+    _enableSignalHandling( false ),
     _userSignalHandlers(),
     _flushOnCall( true ),
     _screenDepth( logtastic::warn ),
