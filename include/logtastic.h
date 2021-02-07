@@ -72,13 +72,31 @@
 
 #if defined(LOGTASTIC_DEBUG_OFF) || defined(LOGTASTIC_ALL_LOGGING_DISABLED)
 
+#ifdef LOGTASTIC_FUNCTION_NAME
+
 #define DEBUG_LOG( log_message ) do{}while(0)
 #define DEBUG_STREAM             if(0) logtastic::message( logtastic::debug, LOGTASTIC_FUNCTION_NAME )
 
+#else // Not Define LOGTASTIC_FUNCTION_NAME
+
+#define DEBUG_LOG( func, log_message ) do{}while(0)
+#define DEBUG_STREAM( func )           if(0) logtastic::message( logtastic::debug, func )
+
+#endif // Defined LOGTASTIC_FUNCTION_NAME
+
 #else
+
+#ifdef LOGTASTIC_FUNCTION_NAME
 
 #define DEBUG_LOG( log_message ) LOGTASTIC_LOG_FUNCTION( logtastic::debug, LOGTASTIC_FUNCTION_NAME, log_message )
 #define DEBUG_STREAM             logtastic::message( logtastic::debug, LOGTASTIC_FUNCTION_NAME )
+
+#else // Not Define LOGTASTIC_FUNCTION_NAME
+
+#define DEBUG_LOG( func, log_message ) LOGTASTIC_LOG_FUNCTION( logtastic::debug, LOGTASTIC_FUNCTION_NAME, log_message )
+#define DEBUG_STREAM( func )           logtastic::message( logtastic::debug, func )
+
+#endif // Defined LOGTASTIC_FUNCTION_NAME
 
 #endif
 
