@@ -122,6 +122,7 @@ namespace logtastic
     _startTime(),
     _startClock(),
 
+    _enableSignalHandling( true ),
     _userSignalHandlers(),
     _flushOnCall( true ),
     _screenDepth( logtastic::warn ),
@@ -150,44 +151,48 @@ namespace logtastic
     _startTime = std::chrono::system_clock::now();
     _startClock = std::chrono::steady_clock::now();
 
-    // Register exiting functions
-    std::atexit( stop );
+    if ( _enableSignalHandling )
+    {
+
+      // Register exiting functions
+      std::atexit( stop );
 #ifdef __linux__
-    at_quick_exit( stop );
+      at_quick_exit( stop );
 #endif
 
-    // Register signal handlers
-    std::signal( SIGABRT, logtastic_signal_handler ); // Abort
-    std::signal( SIGFPE , logtastic_signal_handler ); // Floating Point Exception
-    std::signal( SIGILL , logtastic_signal_handler ); // Illegal Instruction
-    std::signal( SIGINT , logtastic_signal_handler ); // Interrupt
-    std::signal( SIGSEGV, logtastic_signal_handler ); // Segmentation Violation
-    std::signal( SIGTERM, logtastic_signal_handler ); // Termination
+      // Register signal handlers
+      std::signal( SIGABRT, logtastic_signal_handler ); // Abort
+      std::signal( SIGFPE , logtastic_signal_handler ); // Floating Point Exception
+      std::signal( SIGILL , logtastic_signal_handler ); // Illegal Instruction
+      std::signal( SIGINT , logtastic_signal_handler ); // Interrupt
+      std::signal( SIGSEGV, logtastic_signal_handler ); // Segmentation Violation
+      std::signal( SIGTERM, logtastic_signal_handler ); // Termination
 
-    // POSIX Signals
+      // POSIX Signals
 #ifdef __linux__
-    std::signal( SIGHUP ,   logtastic_signal_handler ); // Terminal Hangup
-    std::signal( SIGQUIT,   logtastic_signal_handler ); // Quit & Core dump (user error detection)
-    std::signal( SIGBUS ,   logtastic_signal_handler ); // Bus Error ( Illegal Address )
-    std::signal( SIGXCPU,   logtastic_signal_handler ); // CPU time exceeded
-    std::signal( SIGXFSZ,   logtastic_signal_handler ); // File Size Exceeded
-    std::signal( SIGUSR1,   logtastic_signal_handler ); // USER 1
-    std::signal( SIGUSR2,   logtastic_signal_handler ); // USER 2
-    std::signal( SIGPIPE,   logtastic_signal_handler ); // Broken Pipe
-    std::signal( SIGCHLD,   logtastic_signal_handler ); // Child Process Termination/Stop
-    std::signal( SIGTTIN,   logtastic_signal_handler ); // Access STDIN while in background
-    std::signal( SIGTTOU,   logtastic_signal_handler ); // Using STDOUT while in background (if TOSTOP mode is set)
-    std::signal( SIGALRM,   logtastic_signal_handler ); // Alarm using real or clock time
-    std::signal( SIGVTALRM, logtastic_signal_handler ); // Current process Virtual Time Alarm
-    std::signal( SIGPROF,   logtastic_signal_handler ); // Profiling Alarm
-    std::signal( SIGSTOP,   logtastic_signal_handler ); // Stop
-    std::signal( SIGTSTP,   logtastic_signal_handler ); // Polite Stop ( C-z )
-    std::signal( SIGCONT,   logtastic_signal_handler ); // Program Continue
-    std::signal( SIGTRAP,   logtastic_signal_handler ); // Breakpoint trapping
-    std::signal( SIGWINCH,  logtastic_signal_handler ); // Window size change
-    // std::signal( SIGLOST,   logtastic_signal_handler ); // Lost remote resource // NOT RECOGNISED
-    // sigaction( SIGINFO, logtastic_signal_handler ); // Status request from lead process // NOT RECOGNISED
+      std::signal( SIGHUP ,   logtastic_signal_handler ); // Terminal Hangup
+      std::signal( SIGQUIT,   logtastic_signal_handler ); // Quit & Core dump (user error detection)
+      std::signal( SIGBUS ,   logtastic_signal_handler ); // Bus Error ( Illegal Address )
+      std::signal( SIGXCPU,   logtastic_signal_handler ); // CPU time exceeded
+      std::signal( SIGXFSZ,   logtastic_signal_handler ); // File Size Exceeded
+      std::signal( SIGUSR1,   logtastic_signal_handler ); // USER 1
+      std::signal( SIGUSR2,   logtastic_signal_handler ); // USER 2
+      std::signal( SIGPIPE,   logtastic_signal_handler ); // Broken Pipe
+      std::signal( SIGCHLD,   logtastic_signal_handler ); // Child Process Termination/Stop
+      std::signal( SIGTTIN,   logtastic_signal_handler ); // Access STDIN while in background
+      std::signal( SIGTTOU,   logtastic_signal_handler ); // Using STDOUT while in background (if TOSTOP mode is set)
+      std::signal( SIGALRM,   logtastic_signal_handler ); // Alarm using real or clock time
+      std::signal( SIGVTALRM, logtastic_signal_handler ); // Current process Virtual Time Alarm
+      std::signal( SIGPROF,   logtastic_signal_handler ); // Profiling Alarm
+      std::signal( SIGSTOP,   logtastic_signal_handler ); // Stop
+      std::signal( SIGTSTP,   logtastic_signal_handler ); // Polite Stop ( C-z )
+      std::signal( SIGCONT,   logtastic_signal_handler ); // Program Continue
+      std::signal( SIGTRAP,   logtastic_signal_handler ); // Breakpoint trapping
+      std::signal( SIGWINCH,  logtastic_signal_handler ); // Window size change
+      // std::signal( SIGLOST,   logtastic_signal_handler ); // Lost remote resource // NOT RECOGNISED
+      // sigaction( SIGINFO, logtastic_signal_handler ); // Status request from lead process // NOT RECOGNISED
 #endif
+    }
 
     // Default to linux style
     std::replace( _logDirectory.begin(), _logDirectory.end(), '\\', '/' );
@@ -360,15 +365,15 @@ namespace logtastic
     std::unique_lock<std::mutex> countLock( _elementCountMutex, std::defer_lock );
 
     // Lock the start of the buffer
-    while ( ! startLock.try_lock() );
+    startLock.lock();
     // Lock the counter to check the status
-    while ( ! countLock.try_lock() );
+    countLock.lock();
 
     switch ( _elementCount )
     {
       case 0 :
         {
-          while( ! endLock.try_lock() );
+          endLock.lock();
           _start = element;
           _end = element;
           ++_elementCount;
@@ -378,7 +383,7 @@ namespace logtastic
         break;
       case 1 : // If there's only one element - block the pop
         {
-          while( ! endLock.try_lock() );
+          endLock.lock();
           ++_elementCount;
           countLock.unlock();
 
@@ -547,6 +552,14 @@ namespace logtastic
 
 
   // Signal Handling
+
+  void setEnableSignalHandling( bool value )
+  {
+    if ( logger::_theInstance->_isRunning == false )
+      logger::_theInstance->_enableSignalHandling = value;
+    else
+      push( error, "logtastic::setHaltOnSignal", "Attempted to change signal handling behaviour after logger initialisation" );
+  }
 
   void setHaltOnSignal( int signal, bool value )
   {

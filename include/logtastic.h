@@ -93,7 +93,7 @@
 
 #else // Not Define LOGTASTIC_FUNCTION_NAME
 
-#define DEBUG_LOG( func, log_message ) LOGTASTIC_LOG_FUNCTION( logtastic::debug, LOGTASTIC_FUNCTION_NAME, log_message )
+#define DEBUG_LOG( func, log_message ) LOGTASTIC_LOG_FUNCTION( logtastic::debug, func, log_message )
 #define DEBUG_STREAM( func )           logtastic::message( logtastic::debug, func )
 
 #endif // Defined LOGTASTIC_FUNCTION_NAME
@@ -267,6 +267,7 @@ namespace logtastic
       std::chrono::steady_clock::time_point _startClock;
 
       // Signal action object
+      bool _enableSignalHandling;
       SignalHandler _userSignalHandlers[LOGTASTIC_NUMBER_SIGNALS];
 
       // Options configuration
@@ -361,6 +362,7 @@ namespace logtastic
       friend void setFormatAll( const char * );
       friend void setVariableLogDepth( log_depth );
 
+      friend void setEnableSignalHandling( bool );
       friend void setHaltOnSignal( int, bool );
       friend void registerSignalHandler( int, void (*)(int) );
 
@@ -398,6 +400,7 @@ namespace logtastic
   void setFormatAll( const char * );
   void setVariableLogDepth( log_depth );
 
+  void setEnableSignalHandling( bool );
   void setHaltOnSignal( int, bool );
   void registerSignalHandler( int, void (*)(int) );
 
