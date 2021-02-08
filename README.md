@@ -50,3 +50,5 @@ Signal handling was the last piece added into the system and must be enabled at 
  * Finer controls for the signal handling functionality. It was added quite quickly to meet a need
    but it could be generalised to a more flexible interface.
 
+ * Look at the mutex handling again. I think I could use shared\_mutexes for a lot of locks to increase average access speed. There is also the potential to uses a spinlock but I think that is unecessary and I have already found that "cheap" (read: "terrible"...) implementations are not reliable with a high number of threads.
+
