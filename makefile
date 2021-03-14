@@ -6,7 +6,7 @@
 # Creation Date   : 05/04/2013
 #
 # Last Update     : Christopher Hunt & Ben Krikler
-# At              : 05/04/2013
+# At              : 07/01/2014
 #
 #
 # A simple, flexible makefile designed to work well within a rigid directory structure.
@@ -41,6 +41,11 @@ TMP_DIR = .temp
 EXE_SRC_DIR = ${SRC_DIR}
 
 
+# The headers to include when we install
+# Top level headers
+INSTALL_TOP_HEADERS = logtastic.h
+INSTALL_HEADERS =
+
 # Library Name
 LIB_NAME = logtastic
 
@@ -51,11 +56,15 @@ LIB_FLAGS += -lpthread
 
 
 # Compile-Time Definitions
-DEFINES = #-D__DEBUG_OFF__ #-D__ALL_LOGGING_DISABLED__
+DEFINES =
 
 
 # Installation Directory
-INSTALL_DIR = ${HEAD}
+INSTALL_DIR =
+
+
+# Local Deployment Directory
+DEPLOY_DIR = deploy
 
 
 # The Compiler
@@ -79,6 +88,10 @@ INC_FILES = ${shell ls $(INC_DIR)}
 # Executable Source Files
 EXE_SRC = $(filter %.cxx,${EXE_FILES})
 
+# Intallation headers
+INS_FILES = $(patsubst %.h,${INC_DIR}/%.h,$(filter %.h,$(INSTALL_HEADERS)))
+INS_TOP_FILES = $(patsubst %.h,${INC_DIR}/%.h,$(filter %.h,$(INSTALL_TOP_HEADERS)))
+
 
 
 INCLUDE = $(patsubst %.h,${INC_DIR}/%.h,$(filter %.h,$(INC_FILES)))
@@ -95,16 +108,11 @@ PROGNAMES = $(notdir ${PROGRAMS})
 
 
 
-.PHONY : program all _all build install clean buildall directories library includes intro library_intro single_intro check_install
+.PHONY : program all _all build install clean buildall directories includes intro single_intro check_install deploy
 
 
 
 all : intro directories ${LIBRARY} ${PROGRAMS}
-	@echo "Make Completed Successfully"
-	@echo
-
-
-library : library_intro directories ${LIBRARY}
 	@echo "Make Completed Successfully"
 	@echo
 
@@ -116,12 +124,6 @@ ${PROGNAMES} : % : single_intro ${BIN_DIR}/%
 
 intro :
 	@echo "Building All Program(s) : "$(notdir ${PROGRAMS})
-	@echo "Please Wait..."
-	@echo
-
-
-library_intro :
-	@echo "Building Library Only"
 	@echo "Please Wait..."
 	@echo
 
@@ -145,7 +147,7 @@ ${LIBRARY} : ${OBJECTS}
 	@echo
 
 
-${EXE_OBJ} : ${TMP_DIR}/%.o : ${SRC_DIR}/%.cxx ${INCLUDE}
+${EXE_OBJ} : ${TMP_DIR}/%.o : ${EXE_SRC_DIR}/%.cxx ${INCLUDE}
 	@echo " - Compiling Target : " $(notdir $(basename $@))
 	@${CCC} -c $< -o $@ ${INC_FLAGS}
 
@@ -178,17 +180,34 @@ ${TMP_DIR} :
 
 clean :
 	rm -f ${TMP_DIR}/*
-	rm -f ${LIBRARY}
 	rm -f ${PROGRAMS}
 
+purge :	directories
+	@echo "Purge will remove all files from temporary, library and binary directories."
+	@read -p "Are you sure? (y/n) " -n 1 -r             ;\
+		echo																							;\
+		echo                                              ;\
+		if [[ $$REPLY == "y" ]]                           ;\
+	 	then                                               \
+			echo 'rm -rf ${TMP_DIR}/*'                      ;\
+			rm -rf ${TMP_DIR}/*                             ;\
+			echo 'rm -rf ${BIN_DIR}/*'                      ;\
+			rm -rf ${BIN_DIR}/*                             ;\
+			echo 'rm -rf ${LIB_DIR}/*'                      ;\
+			rm -rf ${LIB_DIR}/*                             ;\
+		else                                               \
+			exit 0                                          ;\
+		fi
 
-install : check_install
+
+install : ${LIBRARY} check_install
 	@echo
 	@echo "Installing Program/Libraries"
-	@cp ${INCLUDE} ${INSTALL_DIR}/include
+	@cp ${INSTALL_HEADERS} ${INSTALL_DIR}/include
+#@cp ${PROGRAMS} ${INSTALL_DIR}/bin
 	@cp ${LIBRARY} ${INSTALL_DIR}/lib
-	@cp ${PROGRAMS} ${INSTALL_DIR}/bin
 	@echo
+
 
 check_install :
 	@if [ -z "${INSTALL_DIR}" ]; then          \
@@ -197,4 +216,21 @@ check_install :
 		echo                                    ;\
 		exit 1                                  ;\
 		fi
+
+
+deploy : ${LIBRARY}
+	@echo
+	@echo "Deploying to local directory: " ${DEPLOY_DIR}
+	@if [ -n "${INS_TOP_FILES}" ]; then                   \
+	  mkdir -p ${DEPLOY_DIR}/include                    ;\
+	  cp ${INS_TOP_FILES} ${DEPLOY_DIR}/include         ;\
+	fi
+	@if [ -n "${INS_FILES}" ]; then                       \
+	  mkdir -p ${DEPLOY_DIR}/include/${LIB_NAME}        ;\
+	  cp ${INS_FILES} ${DEPLOY_DIR}/include/${LIB_NAME} ;\
+	fi
+	@mkdir -p ${DEPLOY_DIR}/lib
+	@cp ${LIBRARY} ${DEPLOY_DIR}/lib
+#@cp ${PROGRAMS} ${INSTALL_DIR}/bin
+	@echo
 
