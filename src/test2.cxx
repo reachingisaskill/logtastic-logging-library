@@ -16,11 +16,11 @@ int main ( int, char** )
   logtastic::setPrintToScreenLimit( logtastic::warn );
   logtastic::setLogFile("test2.log");
   logtastic::setMaxFileSize( 1000 );
-  logtastic::setMaxNumberFiles( 2 );
+  logtastic::setMaxNumberFiles( 10 );
 
   logtastic::start("Logtastic Tests", "1.0");
 
-  for ( size_t i = 0 ; i < 10000; ++i )
+  for ( size_t i = 0 ; i < 100000; ++i )
   {
     INFO_LOG( "test", "Hello" );
     VARIABLE_LOG( "yo", 0, i, 100 );

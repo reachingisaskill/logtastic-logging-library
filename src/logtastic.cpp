@@ -4,11 +4,14 @@
 #include <algorithm>
 #include <iomanip>
 #include <ctime>
+#include <cstring>
 #include <cmath>
 
 
 // Local definitions
 #if defined __linux__
+
+#include "sys/stat.h"
 
 #define LOGTASTIC_SIGNAL_ID( signal ) ( signal == SIGABRT   ? 0 : \
                                         signal == SIGFPE    ? 1 : \
@@ -228,15 +231,47 @@ namespace logtastic
     }
 
 
-    // Initialise output
+    // Create the file names list
     _files.reserve( _numberFiles );
-    int width = std::log10( _numberFiles ) + 1;
-    for( size_t i = 0; i < _numberFiles; ++i )
+    if ( _numberFiles < 2 ) // Don't need numbering if there's only one
     {
       std::stringstream file_path;
-      file_path << _logDirectory << _baseFilename << '.' << std::setw( width ) << std::setfill( '0' ) << i;
+      file_path << _logDirectory << _baseFilename;
       _files.push_back( file_path.str() );
     }
+    else
+    {
+      // Find the starting file
+      size_t next_file = 0;
+      time_t last_modify = 0;
+      // Configure the filename numbering
+      int width = ( _numberFiles < 2 ? 1 : std::log10( _numberFiles - 1 ) + 1 );
+      for( size_t i = 0; i < _numberFiles; ++i )
+      {
+        std::stringstream file_path;
+        file_path << _logDirectory << _baseFilename << '.' << std::setw( width ) << std::setfill( '0' ) << i;
+        _files.push_back( file_path.str() );
+
+#if defined __linux__ // TODO: Implement windows variant
+        struct stat st;
+        if ( stat( file_path.str().c_str(), &st ) == -1 )
+        {
+          if ( errno != ENOENT )
+          {
+            std::cerr << "Failed to read log file directory: " << std::strerror( errno ) << std::endl;
+            std::abort();
+          }
+        }
+        else if ( st.st_mtime > last_modify )
+        {
+          last_modify = st.st_mtime;
+          next_file = i+1;
+        }
+#endif
+      }
+      _currentFileID = next_file % _numberFiles;
+    }
+
 
     _currentFile = std::ofstream( _files[_currentFileID++].c_str(), std::ios_base::out );
     if ( ! _currentFile.is_open() )
